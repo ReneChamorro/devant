@@ -7,13 +7,13 @@ import { ListSkeleton } from "@/components/list-skeleton";
 import {
   addDays,
   DEMO_FAMILIES,
-  DEMO_STUDENTS,
   formatDayCap,
   sessionsForDate,
   startOfWeek,
   studentsForSession,
   todayCaracas,
 } from "@/lib/schedule";
+import { loadAll } from "@/lib/store";
 
 export default function FamilyPage({ params }: PageProps<"/f/[token]">) {
   return (
@@ -32,15 +32,16 @@ async function FamilyBody({ params }: { params: PageProps<"/f/[token]">["params"
   const family = DEMO_FAMILIES[token];
   if (!family) notFound();
 
-  const kids = DEMO_STUDENTS.filter((s) => family.studentIds.includes(s.id)).map(({ id, name }) => ({ id, name }));
+  const { templates, students, productions } = await loadAll();
+  const kids = students.filter((s) => family.studentIds.includes(s.id)).map(({ id, name }) => ({ id, name }));
   const monday = startOfWeek(todayCaracas());
 
   const days: FamilyDay[] = Array.from({ length: 7 }, (_, i) => {
     const date = addDays(monday, i);
-    const items = sessionsForDate(date)
+    const items = sessionsForDate(templates, date, false, productions)
       .map((session) => ({
         session,
-        studentIds: studentsForSession(session)
+        studentIds: studentsForSession(session, students, productions)
           .map((s) => s.id)
           .filter((id) => family.studentIds.includes(id)),
       }))

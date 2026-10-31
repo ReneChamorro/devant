@@ -41,9 +41,17 @@ export function SessionList({
                 </span>
               </div>
               <p className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted">
-                <span className="flex items-center gap-1.5"><User size={16} aria-hidden="true" />{s.teacher}</span>
-                <span className="flex items-center gap-1.5"><MapPin size={16} aria-hidden="true" />{s.room}</span>
+                <span className="flex items-center gap-1.5">
+                  <User size={16} aria-hidden="true" />
+                  {s.teacher || "Profesor por asignar"}
+                </span>
+                {s.room && (
+                  <span className="flex items-center gap-1.5"><MapPin size={16} aria-hidden="true" />{s.room}</span>
+                )}
               </p>
+              {s.danceNames && s.danceNames.length > 0 && (
+                <p className="text-sm text-ink">Bailes: {s.danceNames.join(", ")}</p>
+              )}
               {s.note && <p className="text-sm text-gold-text">{s.note}</p>}
             </div>
           </li>

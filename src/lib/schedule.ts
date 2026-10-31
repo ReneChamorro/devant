@@ -1,11 +1,12 @@
 /*
-  DEMO DATA. Replace with Supabase queries (same shapes) in phase 2.
-  Teachers, hours and student names below are invented placeholders.
+  Schedule model. Shared by server and client code, so no Node APIs here.
+  Persistence lives in store.ts (local JSON file until Supabase is connected).
 */
 
 export type ClassKind =
-  | "infantil"
+  | "baby-ballet"
   | "basico"
+  | "intermedio-avanzado"
   | "intermedio"
   | "avanzado"
   | "puntas"
@@ -14,8 +15,9 @@ export type ClassKind =
   | "ensayo";
 
 export const KIND_INFO: Record<ClassKind, { label: string; blurb: string; requirement?: string }> = {
-  infantil: { label: "Infantil", blurb: "Primeros pasos desde los 3 años: ritmo, postura y juego." },
+  "baby-ballet": { label: "Baby ballet", blurb: "Primeros pasos desde los 3 años: ritmo, postura y juego." },
   basico: { label: "Básico", blurb: "Posiciones, barra y centro. Base técnica del ballet clásico." },
+  "intermedio-avanzado": { label: "Intermedio / Avanzado", blurb: "Más control, giros, saltos y técnica de nivel escénico." },
   intermedio: { label: "Intermedio", blurb: "Más control, giros y saltos. Preparación para puntas." },
   avanzado: { label: "Avanzado", blurb: "Técnica completa, adagio y allegro de nivel escénico." },
   puntas: { label: "Puntas", blurb: "Trabajo en zapatillas de punta, con aprobación de la profesora.", requirement: "Aprobación de la profesora" },
@@ -24,52 +26,101 @@ export const KIND_INFO: Record<ClassKind, { label: string; blurb: string; requir
   ensayo: { label: "Ensayo", blurb: "Ensayo de la obra en montaje." },
 };
 
-export type Session = {
+export const KIND_ORDER: ClassKind[] = [
+  "baby-ballet",
+  "basico",
+  "intermedio-avanzado",
+  "intermedio",
+  "avanzado",
+  "puntas",
+  "pas-de-deux",
+  "variaciones",
+  "ensayo",
+];
+
+export function isClassKind(v: unknown): v is ClassKind {
+  return typeof v === "string" && v in KIND_INFO;
+}
+
+/** What teachers edit. Repeats weekly on `days`, or happens once on `date`. */
+export type Template = {
   id: string;
-  date: string; // YYYY-MM-DD, America/Caracas
+  kind: ClassKind;
+  title: string;
+  /** Empty until the teacher fills it in. */
+  teacher: string;
+  room: string;
+  /** 0 = domingo ... 6 = sábado. Ignored when `date` is set. */
+  days: number[];
+  /** YYYY-MM-DD for one-off activities. */
+  date?: string;
   start: string; // HH:MM
+  end: string;
+  production?: string;
+  productionId?: string;
+  /** Dances being rehearsed (ensayo only). Empty means the whole cast. */
+  danceIds?: string[];
+  note?: string;
+  /** Paused templates do not appear anywhere (e.g. pas de deux while only rehearsals run). */
+  paused?: boolean;
+  /** Dates (YYYY-MM-DD) where this repeating activity is cancelled. */
+  skipDates?: string[];
+};
+
+/** A template resolved to a concrete date. */
+export type Session = {
+  id: string; // `${templateId}@${date}`
+  templateId: string;
+  date: string;
+  start: string;
   end: string;
   kind: ClassKind;
   title: string;
   teacher: string;
   room: string;
   production?: string;
+  danceIds?: string[];
+  danceNames?: string[];
   note?: string;
+  cancelled?: boolean;
 };
 
-type Slot = Omit<Session, "id" | "date">;
+export function sessionsForDate(
+  templates: Template[],
+  iso: string,
+  includeCancelled = false,
+  productions: Production[] = [],
+): Session[] {
+  const danceName = new Map(productions.flatMap((p) => p.dances.map((d) => [d.id, d.name] as const)));
+  const dow = parseISODate(iso).getUTCDay();
+  const out: Session[] = [];
+  for (const t of templates) {
+    if (t.paused) continue;
+    const applies = t.date ? t.date === iso : t.days.includes(dow);
+    if (!applies) continue;
+    const cancelled = !!t.skipDates?.includes(iso);
+    if (cancelled && !includeCancelled) continue;
+    out.push({
+      id: `${t.id}@${iso}`,
+      templateId: t.id,
+      date: iso,
+      start: t.start,
+      end: t.end,
+      kind: t.kind,
+      title: t.title,
+      teacher: t.teacher,
+      room: t.room,
+      production: t.production,
+      danceIds: t.danceIds?.length ? t.danceIds : undefined,
+      danceNames: t.danceIds?.map((id) => danceName.get(id)).filter((n): n is string => !!n),
+      note: t.note,
+      cancelled: cancelled || undefined,
+    });
+  }
+  return out.sort((a, b) => a.start.localeCompare(b.start) || a.title.localeCompare(b.title));
+}
 
-// 0 = domingo ... 6 = sábado
-const WEEK_TEMPLATE: Record<number, Slot[]> = {
-  1: [
-    { start: "16:00", end: "17:00", kind: "infantil", title: "Infantil (3 a 6 años)", teacher: "Prof. Marianela Ruiz", room: "Salón 1" },
-    { start: "17:15", end: "18:30", kind: "basico", title: "Básico", teacher: "Prof. Marianela Ruiz", room: "Salón 1" },
-    { start: "18:45", end: "20:15", kind: "intermedio", title: "Intermedio", teacher: "Prof. Andrés Villalobos", room: "Salón 2" },
-  ],
-  2: [
-    { start: "16:00", end: "17:15", kind: "basico", title: "Básico", teacher: "Prof. Marianela Ruiz", room: "Salón 1" },
-    { start: "17:30", end: "18:45", kind: "puntas", title: "Puntas", teacher: "Prof. Andrés Villalobos", room: "Salón 2" },
-    { start: "19:00", end: "20:30", kind: "ensayo", title: "Ensayo: Copos de nieve", teacher: "Prof. Marianela Ruiz", room: "Salón 2", production: "El Cascanueces" },
-  ],
-  3: [
-    { start: "16:00", end: "17:00", kind: "infantil", title: "Infantil (3 a 6 años)", teacher: "Prof. Marianela Ruiz", room: "Salón 1" },
-    { start: "17:15", end: "18:30", kind: "intermedio", title: "Intermedio", teacher: "Prof. Andrés Villalobos", room: "Salón 2" },
-    { start: "18:45", end: "20:15", kind: "avanzado", title: "Avanzado", teacher: "Prof. Andrés Villalobos", room: "Salón 2" },
-  ],
-  4: [
-    { start: "17:30", end: "18:45", kind: "puntas", title: "Puntas", teacher: "Prof. Andrés Villalobos", room: "Salón 2" },
-    { start: "19:00", end: "20:15", kind: "pas-de-deux", title: "Pas de deux", teacher: "Prof. Andrés Villalobos", room: "Salón 2" },
-  ],
-  5: [
-    { start: "16:30", end: "17:45", kind: "basico", title: "Básico", teacher: "Prof. Marianela Ruiz", room: "Salón 1" },
-    { start: "18:00", end: "19:30", kind: "ensayo", title: "Ensayo: Vals de las flores", teacher: "Prof. Marianela Ruiz", room: "Salón 2", production: "El Cascanueces" },
-  ],
-  6: [
-    { start: "09:00", end: "10:00", kind: "infantil", title: "Infantil (3 a 6 años)", teacher: "Prof. Marianela Ruiz", room: "Salón 1" },
-    { start: "10:30", end: "12:30", kind: "ensayo", title: "Ensayo general", teacher: "Todo el equipo", room: "Salón 2", production: "El Cascanueces", note: "Asistencia de elenco completo." },
-    { start: "13:00", end: "14:15", kind: "variaciones", title: "Variaciones", teacher: "Prof. Andrés Villalobos", room: "Salón 2" },
-  ],
-};
+/* ---------- dates (America/Caracas, no DST) ---------- */
 
 export function toISODate(d: Date): string {
   const y = d.getUTCFullYear();
@@ -106,41 +157,82 @@ export function startOfWeek(iso: string): string {
   return toISODate(d);
 }
 
-export function sessionsForDate(iso: string): Session[] {
-  const slots = WEEK_TEMPLATE[parseISODate(iso).getUTCDay()] ?? [];
-  return slots.map((s, i) => ({ ...s, id: `${iso}-${i}`, date: iso }));
-}
-
 export function formatDay(iso: string, opts: Intl.DateTimeFormatOptions): string {
   return new Intl.DateTimeFormat("es-VE", { timeZone: "UTC", ...opts }).format(parseISODate(iso));
-}
-
-/** Demo roster: family tokens map to students. */
-export type Student = { id: string; name: string; level: ClassKind };
-
-export const DEMO_STUDENTS: Student[] = [
-  { id: "s1", name: "Valentina Rojas", level: "intermedio" },
-  { id: "s2", name: "Camila Ochoa", level: "basico" },
-  { id: "s3", name: "Sofía Brito", level: "avanzado" },
-  { id: "s4", name: "Isabella Pino", level: "puntas" },
-  { id: "s5", name: "Mariana Linares", level: "infantil" },
-  { id: "s6", name: "Gabriela Mendoza", level: "intermedio" },
-  { id: "s7", name: "Luciana Paredes", level: "puntas" },
-  { id: "s8", name: "Daniela Sucre", level: "basico" },
-];
-
-export const DEMO_FAMILIES: Record<string, { name: string; pin: string; studentIds: string[] }> = {
-  demo: { name: "Familia Rojas Ochoa", pin: "1234", studentIds: ["s1", "s2"] },
-};
-
-/** Which levels attend a given session (demo rule). */
-export function studentsForSession(s: Session): Student[] {
-  if (s.kind === "ensayo") return DEMO_STUDENTS.filter((st) => st.level !== "infantil");
-  return DEMO_STUDENTS.filter((st) => st.level === s.kind || (s.kind === "pas-de-deux" && st.level === "puntas") || (s.kind === "variaciones" && ["avanzado", "puntas"].includes(st.level)));
 }
 
 /** Like formatDay, with only the first letter capitalized (CSS `capitalize` would also capitalize "de"). */
 export function formatDayCap(iso: string, opts: Intl.DateTimeFormatOptions): string {
   const s = formatDay(iso, opts);
   return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+export const WEEKDAY_SHORT = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"];
+export const WEEKDAY_LONG = ["domingo", "lunes", "martes", "miércoles", "jueves", "viernes", "sábado"];
+/** Display order for day pickers: Monday first. */
+export const WEEK_ORDER = [1, 2, 3, 4, 5, 6, 0];
+
+export function summarizeDays(days: number[]): string {
+  const set = [...days].sort((a, b) => ((a + 6) % 7) - ((b + 6) % 7));
+  const idx = set.map((d) => (d + 6) % 7);
+  const contiguous = idx.length > 1 && idx.every((v, i) => i === 0 || v === idx[i - 1] + 1);
+  if (contiguous) return `${WEEKDAY_LONG[set[0]]} a ${WEEKDAY_LONG[set[set.length - 1]]}`;
+  return set.map((d) => WEEKDAY_SHORT[d]).join(", ");
+}
+
+/* ---------- students, productions, casting ---------- */
+
+/** Levels a student can be placed in. */
+export const LEVEL_KINDS: ClassKind[] = ["baby-ballet", "basico", "intermedio", "avanzado", "puntas"];
+
+export type Student = { id: string; name: string; level: ClassKind };
+export type Dance = { id: string; name: string; studentIds: string[] };
+export type Production = {
+  id: string;
+  name: string;
+  /** The production currently being staged. Only one is active. */
+  active: boolean;
+  dances: Dance[];
+};
+
+/** Demo families until accounts are real. Student ids match the seed roster. */
+export const DEMO_FAMILIES: Record<string, { name: string; pin: string; studentIds: string[] }> = {
+  demo: { name: "Familia Rojas Ochoa", pin: "1234", studentIds: ["s1", "s2"] },
+};
+
+/** Who is expected at a session. Rehearsals of chosen dances use the cast picked by teachers. */
+export function studentsForSession(
+  s: Pick<Session, "kind" | "danceIds">,
+  students: Student[],
+  productions: Production[],
+): Student[] {
+  switch (s.kind) {
+    case "ensayo": {
+      if (s.danceIds?.length) {
+        const wanted = new Set(s.danceIds);
+        const ids = new Set(
+          productions.flatMap((p) => p.dances.filter((d) => wanted.has(d.id)).flatMap((d) => d.studentIds)),
+        );
+        return students.filter((st) => ids.has(st.id));
+      }
+      return students.filter((st) => st.level !== "baby-ballet");
+    }
+    case "intermedio-avanzado":
+      return students.filter((st) => ["intermedio", "avanzado", "puntas"].includes(st.level));
+    case "pas-de-deux":
+      return students.filter((st) => st.level === "puntas");
+    case "variaciones":
+      return students.filter((st) => ["avanzado", "puntas"].includes(st.level));
+    default:
+      return students.filter((st) => st.level === s.kind);
+  }
+}
+
+/** Names of the chosen dances (of this session) that a student is cast in. */
+export function dancesOfStudent(studentId: string, danceIds: string[] | undefined, productions: Production[]): string[] {
+  if (!danceIds?.length) return [];
+  const wanted = new Set(danceIds);
+  return productions.flatMap((p) =>
+    p.dances.filter((d) => wanted.has(d.id) && d.studentIds.includes(studentId)).map((d) => d.name),
+  );
 }

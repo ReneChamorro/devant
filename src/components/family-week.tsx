@@ -93,7 +93,10 @@ export function FamilyWeek({
               {day.items.map(({ session, studentIds }) => (
                 <li key={session.id} className="card space-y-4 p-4 sm:p-5">
                   <div>
-                    <p className="tabular text-sm text-muted">{session.start} a {session.end} · {session.room}</p>
+                    <p className="tabular text-sm text-muted">{session.start} a {session.end}{session.room && ` · ${session.room}`}</p>
+                    {session.danceNames && session.danceNames.length > 0 && (
+                      <p className="text-sm text-ink">Bailes: {session.danceNames.join(", ")}</p>
+                    )}
                     <h3 className="!font-sans text-lg font-semibold !text-ink">
                       {session.title}{" "}
                       <span className="chip ml-1 align-middle">{KIND_INFO[session.kind].label}</span>

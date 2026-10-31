@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Check, Clock, X } from "@phosphor-icons/react";
+import { cancelDateAction } from "@/app/profe/actions";
 import { KIND_INFO, type Session, type Student } from "@/lib/schedule";
 
 type Avail = "yes" | "maybe" | "no" | "none";
@@ -9,7 +10,7 @@ type Mark = "present" | "late" | "absent";
 
 export type RosterEntry = {
   session: Session;
-  students: (Student & { avail: Avail })[];
+  students: (Student & { avail: Avail; dances: string[] })[];
 };
 
 const AVAIL_LABEL: Record<Avail, string> = {
@@ -46,19 +47,34 @@ export function DayRoster({ entries }: { entries: RosterEntry[] }) {
         return (
           <section key={session.id} aria-labelledby={`r-${session.id}`} className="card overflow-hidden">
             <header className="space-y-2 border-b border-line p-4 sm:p-5">
-              <p className="tabular text-sm text-muted">{session.start} a {session.end} · {session.room} · {session.teacher}</p>
+              <p className="tabular text-sm text-muted">
+                {session.start} a {session.end}
+                {session.room && ` · ${session.room}`} · {session.teacher || "Profesor por asignar"}
+              </p>
               <h2 id={`r-${session.id}`} className="!font-sans text-xl font-semibold !text-ink">
                 {session.title} <span className="chip ml-1 align-middle">{KIND_INFO[session.kind].label}</span>
               </h2>
-              <p className="tabular flex flex-wrap gap-x-4 gap-y-1 text-sm">
-                <span className="text-ok">{count("yes")} van</span>
-                <span className="text-warn">{count("maybe")} quizá</span>
-                <span className="text-bad">{count("no")} no van</span>
-                <span className="text-muted">{count("none")} sin respuesta</span>
-              </p>
+              {session.cancelled ? (
+                <p className="text-sm font-semibold text-bad">Cancelada este día</p>
+              ) : (
+                <p className="tabular flex flex-wrap gap-x-4 gap-y-1 text-sm">
+                  <span className="text-ok">{count("yes")} van</span>
+                  <span className="text-warn">{count("maybe")} quizá</span>
+                  <span className="text-bad">{count("no")} no van</span>
+                  <span className="text-muted">{count("none")} sin respuesta</span>
+                </p>
+              )}
+              <form action={cancelDateAction}>
+                <input type="hidden" name="id" value={session.templateId} />
+                <input type="hidden" name="date" value={session.date} />
+                <input type="hidden" name="cancelled" value={session.cancelled ? "0" : "1"} />
+                <button type="submit" className="btn btn-ghost !min-h-10 !px-3 text-sm">
+                  {session.cancelled ? "Restaurar este día" : "No hay clase este día"}
+                </button>
+              </form>
             </header>
 
-            {students.length === 0 ? (
+            {session.cancelled ? null : students.length === 0 ? (
               <p className="p-5 text-muted">No hay alumnas asignadas a esta actividad.</p>
             ) : (
               <ul className="divide-y divide-line">
@@ -69,6 +85,7 @@ export function DayRoster({ entries }: { entries: RosterEntry[] }) {
                       <div>
                         <p className="font-medium">{st.name}</p>
                         <p className={`text-sm ${AVAIL_STYLE[st.avail]}`}>{AVAIL_LABEL[st.avail]}</p>
+                        {st.dances.length > 0 && <p className="text-sm text-muted">{st.dances.join(", ")}</p>}
                       </div>
                       <div role="group" aria-label={`Asistencia de ${st.name}`} className="flex gap-1.5">
                         {MARKS.map(({ value, label, Icon }) => {

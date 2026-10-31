@@ -13,6 +13,7 @@ import {
   startOfWeek,
   todayCaracas,
 } from "@/lib/schedule";
+import { loadProductions, loadTemplates } from "@/lib/store";
 
 export const metadata: Metadata = {
   title: "Calendario",
@@ -43,7 +44,8 @@ async function CalendarBody({ searchParams }: { searchParams: PageProps<"/calend
   const selected = isValidISODate(raw) ? raw : today;
   const weekStart = startOfWeek(selected);
   const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
-  const sessions = sessionsForDate(selected);
+  const [templates, productions] = await Promise.all([loadTemplates(), loadProductions()]);
+  const sessions = sessionsForDate(templates, selected, false, productions);
 
   const rehearsals = sessions.filter((s) => s.kind === "ensayo");
   const classes = sessions.filter((s) => s.kind !== "ensayo");
@@ -73,7 +75,7 @@ async function CalendarBody({ searchParams }: { searchParams: PageProps<"/calend
       <nav aria-label="Días de la semana" className="mb-10 grid grid-cols-7 gap-1.5 sm:gap-2">
         {days.map((d) => {
           const isSel = d === selected;
-          const count = sessionsForDate(d).length;
+          const count = sessionsForDate(templates, d).length;
           return (
             <Link
               key={d}

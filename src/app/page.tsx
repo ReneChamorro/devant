@@ -7,6 +7,7 @@ import { PhotoSlot } from "@/components/photo-slot";
 import { Reveal } from "@/components/reveal";
 import { SessionList } from "@/components/session-list";
 import { formatDayCap, sessionsForDate, todayCaracas } from "@/lib/schedule";
+import { loadProductions, loadTemplates } from "@/lib/store";
 import { ACTIVE_SEASON, SEASONS } from "@/lib/season";
 
 const tile = "card p-6 sm:p-7";
@@ -19,7 +20,7 @@ async function TodayList() {
       <p className="mb-3 text-sm font-semibold text-muted">
         {formatDayCap(today, { weekday: "long", day: "numeric", month: "long" })}
       </p>
-      <SessionList sessions={sessionsForDate(today)} emptyText="Hoy no hay clases ni ensayos." />
+      <SessionList sessions={sessionsForDate(await loadTemplates(), today, false, await loadProductions())} emptyText="Hoy no hay clases ni ensayos." />
     </>
   );
 }
@@ -74,7 +75,7 @@ export default function Home() {
         </Reveal>
         <div className="grid gap-4 md:grid-cols-6">
           <Reveal className={`${tile} md:col-span-4 bg-[linear-gradient(135deg,rgba(212,175,55,0.14),transparent_70%)]`}>
-            <h3 className="text-2xl">Infantil</h3>
+            <h3 className="text-2xl">Baby ballet</h3>
             <p className="mt-2 max-w-[44ch] text-muted">Desde los 3 años. Ritmo, postura y juego para enamorarse del ballet desde el primer día.</p>
           </Reveal>
           <Reveal delay={0.05} className={`${tile} md:col-span-2`}>
@@ -83,7 +84,7 @@ export default function Home() {
           </Reveal>
           <Reveal delay={0.05} className={`${tile} md:col-span-2`}>
             <h3 className="text-2xl">Intermedio</h3>
-            <p className="mt-2 text-muted">Giros, saltos y preparación para puntas.</p>
+            <p className="mt-2 text-muted">Giros, saltos y preparación para puntas. Se da junto con Avanzado.</p>
           </Reveal>
           <Reveal delay={0.1} className={`${tile} md:col-span-2`}>
             <h3 className="text-2xl">Avanzado</h3>

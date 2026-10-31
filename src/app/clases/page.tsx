@@ -4,12 +4,12 @@ import { KIND_INFO, type ClassKind } from "@/lib/schedule";
 
 export const metadata: Metadata = {
   title: "Clases y niveles",
-  description: "Infantil, básico, intermedio, avanzado, puntas, pas de deux y variaciones en la Academia Devant.",
+  description: "Baby ballet, básico, intermedio, avanzado, puntas, pas de deux y variaciones en la Academia Devant.",
 };
 
 const GROUPS: { title: string; intro: string; kinds: ClassKind[] }[] = [
-  { title: "Primeros pasos", intro: "Para quien empieza.", kinds: ["infantil", "basico"] },
-  { title: "Técnica en crecimiento", intro: "Más control y preparación para el escenario.", kinds: ["intermedio", "avanzado"] },
+  { title: "Primeros pasos", intro: "Para quien empieza.", kinds: ["baby-ballet", "basico"] },
+  { title: "Técnica en crecimiento", intro: "Más control y preparación para el escenario. Se dan en la misma clase.", kinds: ["intermedio-avanzado"] },
   { title: "Escena", intro: "Zapatillas de punta, pareja y repertorio.", kinds: ["puntas", "pas-de-deux", "variaciones"] },
 ];
 

@@ -38,6 +38,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     <html
       lang="es"
       data-season={ACTIVE_SEASON}
+      data-scroll-behavior="smooth"
       className={`${display.variable} ${body.variable} h-full antialiased`}
     >
       <body className="flex min-h-full flex-col">
