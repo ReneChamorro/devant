@@ -1,0 +1,195 @@
+@import "tailwindcss";
+
+/*
+  Devant design tokens.
+  Base identity (navy + gold) is fixed. The [data-season] layer only swaps
+  ornament and the soft tint, so the look can change per production.
+  Shape rule: buttons/inputs 12px, cards 16px, chips full.
+*/
+:root {
+  --bg: #0b1020;
+  --bg-2: #0f1421;
+  --surface: #141b30;
+  --surface-2: #1a2342;
+  --line: rgba(234, 217, 164, 0.16);
+  --ink: #f0ecdf;
+  --muted: #a9b0c4;
+  --brand: #1c3d7a;
+  --brand-soft: #2a6ad9;
+  --gold: #d4af37;
+  --gold-ink: #0b1020;
+  --gold-text: #e3c167;
+  --gold-soft: #ead9a4;
+  --ok: #5fcf9a;
+  --warn: #f2b45a;
+  --bad: #ff8a8f;
+  --season-tint: rgba(80, 120, 255, 0.14);
+  --season-ornament: none;
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --bg: #f5f7fb;
+    --bg-2: #edf1f8;
+    --surface: #ffffff;
+    --surface-2: #edf1f8;
+    --line: #dde3ee;
+    --ink: #141b2d;
+    --muted: #4f586d;
+    --gold-text: #8a6410;
+    --ok: #1f7a4d;
+    --warn: #8a5a00;
+    --bad: #a3262f;
+    --season-tint: rgba(42, 106, 217, 0.1);
+  }
+}
+
+[data-season="cascanueces"] {
+  --season-tint: rgba(188, 210, 246, 0.12);
+  --season-ornament: radial-gradient(circle at 20% 30%, rgba(234, 217, 164, 0.22) 0 1.5px, transparent 2px),
+    radial-gradient(circle at 70% 60%, rgba(188, 210, 246, 0.25) 0 1.5px, transparent 2px),
+    radial-gradient(circle at 45% 85%, rgba(234, 217, 164, 0.18) 0 1px, transparent 1.5px);
+}
+
+[data-season="corsario"] {
+  --season-tint: rgba(200, 144, 31, 0.12);
+  --season-ornament: linear-gradient(135deg, rgba(212, 175, 55, 0.07) 25%, transparent 25%) 0 0 / 28px 28px;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-bg-2: var(--bg-2);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-line: var(--line);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-brand: var(--brand);
+  --color-gold: var(--gold);
+  --color-gold-ink: var(--gold-ink);
+  --color-gold-text: var(--gold-text);
+  --color-gold-soft: var(--gold-soft);
+  --color-ok: var(--ok);
+  --color-warn: var(--warn);
+  --color-bad: var(--bad);
+  --font-sans: var(--font-body);
+  --font-display: var(--font-display);
+}
+
+html {
+  scroll-behavior: smooth;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  background-color: var(--bg);
+  background-image: var(--season-ornament),
+    radial-gradient(120% 60% at 50% 0%, var(--season-tint), transparent 70%),
+    linear-gradient(var(--bg-2), var(--bg));
+  background-attachment: fixed;
+  color: var(--ink);
+  font-family: var(--font-body), system-ui, sans-serif;
+  line-height: 1.6;
+  text-wrap: pretty;
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--font-display), Georgia, serif;
+  color: var(--gold-text);
+  text-wrap: balance;
+}
+
+::selection {
+  background: var(--gold);
+  color: var(--gold-ink);
+}
+
+:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 3px;
+  border-radius: 6px;
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+@layer components {
+/* Buttons: pressable, fast, no layout shift */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  min-height: 44px;
+  padding: 0 1.25rem;
+  border-radius: 12px;
+  font-weight: 600;
+  font-size: 0.95rem;
+  white-space: nowrap;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition:
+    transform 160ms var(--ease-out),
+    background-color 160ms ease,
+    border-color 160ms ease,
+    color 160ms ease;
+  touch-action: manipulation;
+}
+.btn:active {
+  transform: scale(0.97);
+}
+.btn-gold {
+  background: var(--gold);
+  color: var(--gold-ink);
+}
+.btn-ghost {
+  border-color: var(--line);
+  color: var(--ink);
+  background: transparent;
+}
+@media (hover: hover) and (pointer: fine) {
+  .btn-gold:hover {
+    background: var(--gold-soft);
+  }
+  .btn-ghost:hover {
+    border-color: var(--gold);
+    color: var(--gold-text);
+  }
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-height: 28px;
+  padding: 0 0.7rem;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  border: 1px solid var(--line);
+  color: var(--muted);
+}
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
