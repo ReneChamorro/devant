@@ -1,49 +1,46 @@
 "use client";
 
-import { useId, useState } from "react";
+import { useId, useState, useTransition } from "react";
 import { Check, LockKey, Question, X } from "@phosphor-icons/react";
-import { KIND_INFO, type Session } from "@/lib/schedule";
+import { setAvailabilityAction, unlockFamilyAction } from "@/app/f/actions";
+import type { FamilyData } from "@/lib/family";
+import { KIND_INFO, type Availability } from "@/lib/schedule";
 
-export type FamilyDay = {
-  date: string;
-  label: string;
-  items: { session: Session; studentIds: string[] }[];
-};
-type Kid = { id: string; name: string };
-type Status = "yes" | "maybe" | "no";
-
-const OPTIONS: { value: Status; label: string; Icon: typeof Check }[] = [
+const OPTIONS: { value: Availability; label: string; Icon: typeof Check }[] = [
   { value: "yes", label: "Voy", Icon: Check },
   { value: "maybe", label: "Quizá", Icon: Question },
   { value: "no", label: "No voy", Icon: X },
 ];
 
-export function FamilyWeek({
-  familyName,
-  pin,
-  kids,
-  days,
-}: {
-  familyName: string;
-  pin: string;
-  kids: Kid[];
-  days: FamilyDay[];
-}) {
-  const [unlocked, setUnlocked] = useState(false);
-  const [attempt, setAttempt] = useState("");
-  const [error, setError] = useState(false);
-  const [answers, setAnswers] = useState<Record<string, Status>>({});
+export function FamilyWeek({ token }: { token: string }) {
+  const [data, setData] = useState<FamilyData | null>(null);
+  const [pin, setPin] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [answers, setAnswers] = useState<Record<string, Availability>>({});
   const [saved, setSaved] = useState("");
+  const [pending, startTransition] = useTransition();
   const pinId = useId();
 
-  if (!unlocked) {
+  if (!data) {
     return (
       <form
         className="card mx-auto max-w-sm space-y-4 p-6"
         onSubmit={(e) => {
           e.preventDefault();
-          if (attempt === pin) setUnlocked(true);
-          else setError(true);
+          startTransition(async () => {
+            const res = await unlockFamilyAction(token, pin);
+            if (res.ok) {
+              setData(res.data);
+              setAnswers(res.data.answers);
+              setError(null);
+            } else {
+              setError(
+                res.reason === "locked"
+                  ? "Demasiados intentos. Espera un minuto e inténtalo de nuevo."
+                  : "PIN incorrecto. Revisa los 4 números e inténtalo de nuevo.",
+              );
+            }
+          });
         }}
       >
         <h2 className="flex items-center gap-2 text-xl">
@@ -56,34 +53,65 @@ export function FamilyWeek({
             inputMode="numeric"
             autoComplete="one-time-code"
             maxLength={4}
-            value={attempt}
+            value={pin}
             onChange={(e) => {
-              setAttempt(e.target.value.replace(/\D/g, ""));
-              setError(false);
+              setPin(e.target.value.replace(/\D/g, ""));
+              setError(null);
             }}
-            aria-invalid={error}
+            aria-invalid={!!error}
             aria-describedby={`${pinId}-help`}
             className="min-h-12 w-full rounded-xl border border-line bg-bg px-4 text-lg tracking-[0.4em] text-ink"
           />
           <p id={`${pinId}-help`} className={`text-sm ${error ? "text-bad" : "text-muted"}`} role={error ? "alert" : undefined}>
-            {error ? "PIN incorrecto. Revisa los 4 números e inténtalo de nuevo." : "4 números. Te lo dio la academia junto con tu enlace."}
+            {error ?? "4 números. Te lo dio la academia junto con tu enlace."}
           </p>
         </div>
-        <button type="submit" className="btn btn-gold w-full">Entrar</button>
+        <button type="submit" disabled={pending} className="btn btn-gold w-full disabled:opacity-60">
+          {pending ? "Entrando..." : "Entrar"}
+        </button>
       </form>
     );
   }
 
   const key = (sid: string, kid: string) => `${sid}:${kid}`;
 
+  function answer(sessionId: string, kidId: string, kidName: string, title: string, value: Availability, label: string) {
+    const k = key(sessionId, kidId);
+    const previous = answers[k];
+    // Pressing the active answer again clears it, back to "sin respuesta".
+    const next = previous === value ? null : value;
+    setAnswers((a) => {
+      const copy = { ...a };
+      if (next) copy[k] = next;
+      else delete copy[k];
+      return copy;
+    });
+    startTransition(async () => {
+      const res = await setAvailabilityAction(token, pin, sessionId, kidId, next);
+      if (res.ok) {
+        setSaved(next ? `${kidName}: ${label} en ${title}. Guardado.` : `${kidName}: respuesta borrada en ${title}.`);
+      } else {
+        // Roll back so the screen never shows an answer the academy did not receive.
+        setAnswers((a) => {
+          const copy = { ...a };
+          if (previous) copy[k] = previous;
+          else delete copy[k];
+          return copy;
+        });
+        setSaved("No se pudo guardar. Inténtalo de nuevo.");
+      }
+    });
+  }
+
   return (
     <div className="space-y-10">
       <p className="text-muted">
-        Hola, <strong className="text-ink">{familyName}</strong>. Marca si cada bailarina puede asistir. Puedes cambiarlo hasta el mismo día.
+        Hola, <strong className="text-ink">{data.familyName}</strong>. Marca si cada bailarina puede asistir. Puedes cambiarlo hasta el mismo día; si tocas la misma opción otra vez, se borra.
       </p>
       <p className="sr-only" role="status" aria-live="polite">{saved}</p>
+      {saved.startsWith("No se pudo") && <p role="alert" className="text-sm text-bad">{saved}</p>}
 
-      {days.map((day) => (
+      {data.days.map((day) => (
         <section key={day.date} aria-labelledby={`d-${day.date}`}>
           <h2 id={`d-${day.date}`} className="mb-3 text-xl">{day.label}</h2>
           {day.items.length === 0 ? (
@@ -102,13 +130,16 @@ export function FamilyWeek({
                       <span className="chip ml-1 align-middle">{KIND_INFO[session.kind].label}</span>
                     </h3>
                   </div>
-                  {kids
+                  {data.kids
                     .filter((k) => studentIds.includes(k.id))
                     .map((k) => {
                       const current = answers[key(session.id, k.id)];
                       return (
                         <div key={k.id} role="group" aria-label={`${k.name}: ${session.title}`} className="flex flex-wrap items-center justify-between gap-3">
-                          <span className="font-medium">{k.name}</span>
+                          <span className="font-medium">
+                            {k.name}
+                            {!current && <span className="ml-2 text-sm text-muted">Sin respuesta</span>}
+                          </span>
                           <div className="flex gap-1.5">
                             {OPTIONS.map(({ value, label, Icon }) => {
                               const on = current === value;
@@ -117,10 +148,7 @@ export function FamilyWeek({
                                   key={value}
                                   type="button"
                                   aria-pressed={on}
-                                  onClick={() => {
-                                    setAnswers((a) => ({ ...a, [key(session.id, k.id)]: value }));
-                                    setSaved(`${k.name}: ${label} en ${session.title}. Guardado.`);
-                                  }}
+                                  onClick={() => answer(session.id, k.id, k.name, session.title, value, label)}
                                   className={`btn !min-h-11 !px-3 text-sm ${
                                     on
                                       ? value === "yes"

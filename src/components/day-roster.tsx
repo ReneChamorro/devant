@@ -1,12 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import { Check, Clock, X } from "@phosphor-icons/react";
-import { cancelDateAction } from "@/app/profe/actions";
-import { KIND_INFO, type Session, type Student } from "@/lib/schedule";
+import { cancelDateAction, setAttendanceAction } from "@/app/profe/actions";
+import { KIND_INFO, type Attendance as Mark, type Session, type Student } from "@/lib/schedule";
 
 type Avail = "yes" | "maybe" | "no" | "none";
-type Mark = "present" | "late" | "absent";
 
 export type RosterEntry = {
   session: Session;
@@ -31,8 +30,15 @@ const MARKS: { value: Mark; label: string; Icon: typeof Check }[] = [
   { value: "absent", label: "Ausente", Icon: X },
 ];
 
-export function DayRoster({ entries }: { entries: RosterEntry[] }) {
-  const [marks, setMarks] = useState<Record<string, Mark>>({});
+export function DayRoster({
+  entries,
+  initialMarks,
+}: {
+  entries: RosterEntry[];
+  initialMarks: Record<string, Mark>;
+}) {
+  const [marks, setMarks] = useState<Record<string, Mark>>(initialMarks);
+  const [, startTransition] = useTransition();
   const [status, setStatus] = useState("");
 
   if (entries.length === 0) {
@@ -96,8 +102,29 @@ export function DayRoster({ entries }: { entries: RosterEntry[] }) {
                               type="button"
                               aria-pressed={on}
                               onClick={() => {
-                                setMarks((m) => ({ ...m, [k]: value }));
-                                setStatus(`${st.name}: ${label}.`);
+                                // Pressing the active mark again clears it.
+                                const next = on ? "" : value;
+                                const previous = marks[k];
+                                setMarks((m) => {
+                                  const copy = { ...m };
+                                  if (next) copy[k] = next;
+                                  else delete copy[k];
+                                  return copy;
+                                });
+                                startTransition(async () => {
+                                  const res = await setAttendanceAction(session.id, st.id, next);
+                                  if (res.ok) {
+                                    setStatus(next ? `${st.name}: ${label}. Guardado.` : `${st.name}: marca borrada.`);
+                                  } else {
+                                    setMarks((m) => {
+                                      const copy = { ...m };
+                                      if (previous) copy[k] = previous;
+                                      else delete copy[k];
+                                      return copy;
+                                    });
+                                    setStatus(`No se pudo guardar la asistencia de ${st.name}.`);
+                                  }
+                                });
                               }}
                               className={`btn !min-h-11 !px-3 text-sm ${
                                 on

@@ -8,7 +8,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { SEED_PRODUCTIONS, SEED_STUDENTS, SEED_TEMPLATES } from "./seed";
-import type { Dance, Production, Student, Template } from "./schedule";
+import type { Attendance, Availability, Dance, Production, Response, Student, Template } from "./schedule";
 
 const DIR = path.join(process.cwd(), ".data");
 
@@ -41,6 +41,7 @@ async function write<T>(name: string, data: T[]) {
 const T = "schedule.json";
 const S = "students.json";
 const P = "productions.json";
+const R = "responses.json";
 
 const readTemplates = () => read<Template>(T, SEED_TEMPLATES);
 const readStudents = () => read<Student>(S, SEED_STUDENTS);
@@ -135,6 +136,7 @@ export function deleteStudent(id: string): Promise<void> {
     const prods = await readProductions();
     for (const p of prods) for (const d of p.dances) d.studentIds = d.studentIds.filter((x) => x !== id);
     await write(P, prods);
+    await write(R, (await readResponses()).filter((r) => r.studentId !== id));
   });
 }
 
@@ -203,4 +205,33 @@ export function saveCast(productionId: string, danceId: string, studentIds: stri
 
 function findDance(all: Production[], productionId: string, danceId: string): Dance | undefined {
   return all.find((p) => p.id === productionId)?.dances.find((d) => d.id === danceId);
+}
+
+/* ---------- responses (family availability, teacher attendance) ---------- */
+
+const readResponses = () => read<Response>(R, []);
+export const loadResponses = readResponses;
+
+/** Set one field of a response. `null` clears it; an empty record is removed. */
+export function setResponse(
+  sessionId: string,
+  studentId: string,
+  field: "availability" | "attendance",
+  value: Availability | Attendance | null,
+): Promise<void> {
+  return exclusive(async () => {
+    const all = await readResponses();
+    let r = all.find((x) => x.sessionId === sessionId && x.studentId === studentId);
+    if (!r) {
+      if (value === null) return;
+      r = { sessionId, studentId };
+      all.push(r);
+    }
+    if (value === null) delete r[field];
+    else (r as Record<string, unknown>)[field] = value;
+    await write(
+      R,
+      all.filter((x) => x.availability || x.attendance),
+    );
+  });
 }

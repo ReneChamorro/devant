@@ -47,6 +47,21 @@ export function checkCredentials(email: string, password: string): "ok" | "bad" 
   return "bad";
 }
 
+/** Family PIN check. 5 misses per link, then a 60 s pause (in memory). */
+const familyMisses = new Map<string, { n: number; until: number }>();
+
+export function checkFamilyPin(token: string, expectedPin: string, pin: string): "ok" | "bad" | "locked" {
+  const m = familyMisses.get(token);
+  if (m && m.until > Date.now()) return "locked";
+  if (safeEqual(pin, expectedPin)) {
+    familyMisses.delete(token);
+    return "ok";
+  }
+  const n = (m && m.until === 0 ? m.n : 0) + 1;
+  familyMisses.set(token, n >= 5 ? { n: 0, until: Date.now() + 60_000 } : { n, until: 0 });
+  return "bad";
+}
+
 export async function startTeacherSession() {
   const exp = Date.now() + MAX_AGE_S * 1000;
   const payload = `${TEST_TEACHER.email}|${exp}`;

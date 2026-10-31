@@ -21,7 +21,7 @@ En `/profe/obras` se elige la obra que se monta ahora (por defecto El Cascanuece
 
 ## Estado
 
-Las alumnas iniciales (`src/lib/seed.ts`) y la familia `/f/demo` son de ejemplo. Los nombres de profesores los escriben las profes. Las respuestas "voy / no voy" y el pase de lista aún no se guardan; el siguiente paso es Supabase (Postgres + Auth + RLS) con las mismas formas de datos.
+Las alumnas iniciales (`src/lib/seed.ts`) y la familia `/f/demo` son de ejemplo. Los nombres de profesores los escriben las profes. Las respuestas "voy / no voy" de las familias y la asistencia que marcan las profes se guardan en `.data/responses.json`; sin respuesta, cada alumna figura como "Sin respuesta". El PIN de la familia se comprueba en el servidor. El siguiente paso es Supabase (Postgres + Auth + RLS) con las mismas formas de datos.
 
 ## Diseño
 

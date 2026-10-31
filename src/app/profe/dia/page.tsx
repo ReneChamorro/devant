@@ -3,6 +3,7 @@ import { connection } from "next/server";
 import Link from "next/link";
 import { CaretLeft, CaretRight, Plus } from "@phosphor-icons/react/dist/ssr";
 import { DayRoster, type RosterEntry } from "@/components/day-roster";
+import type { Attendance as Mark } from "@/lib/schedule";
 import { ListSkeleton } from "@/components/list-skeleton";
 import { TeacherNav } from "@/components/teacher-nav";
 import { requireTeacher } from "@/lib/auth";
@@ -15,18 +16,9 @@ import {
   studentsForSession,
   todayCaracas,
 } from "@/lib/schedule";
-import { loadAll } from "@/lib/store";
+import { loadAll, loadResponses } from "@/lib/store";
 
 export const metadata = { title: "Vista del día" };
-
-const AVAIL = ["yes", "yes", "yes", "maybe", "no", "none"] as const;
-
-/** Deterministic demo answers until family responses are stored. */
-function demoAvail(sessionId: string, studentId: string) {
-  let h = 0;
-  for (const c of sessionId + studentId) h = (h * 31 + c.charCodeAt(0)) >>> 0;
-  return AVAIL[h % AVAIL.length];
-}
 
 export default function DiaPage({ searchParams }: PageProps<"/profe/dia">) {
   return (
@@ -46,12 +38,15 @@ async function DayBody({ searchParams }: { searchParams: PageProps<"/profe/dia">
   const raw = Array.isArray(sp.fecha) ? sp.fecha[0] : sp.fecha;
   const date = isValidISODate(raw) ? raw : todayCaracas();
 
-  const { templates, students, productions } = await loadAll();
+  const [{ templates, students, productions }, responses] = await Promise.all([loadAll(), loadResponses()]);
+  const byKey = new Map(responses.map((r) => [`${r.sessionId}:${r.studentId}`, r]));
+  const marks: Record<string, Mark> = {};
+  for (const r of responses) if (r.attendance) marks[`${r.sessionId}:${r.studentId}`] = r.attendance;
   const entries: RosterEntry[] = sessionsForDate(templates, date, true, productions).map((session) => ({
     session,
     students: studentsForSession(session, students, productions).map((st) => ({
       ...st,
-      avail: demoAvail(session.id, st.id),
+      avail: byKey.get(`${session.id}:${st.id}`)?.availability ?? "none",
       dances: dancesOfStudent(st.id, session.danceIds, productions),
     })),
   }));
@@ -60,7 +55,7 @@ async function DayBody({ searchParams }: { searchParams: PageProps<"/profe/dia">
     <>
       <TeacherNav current="dia" name={teacher.name} />
       <p className="mb-6 text-sm text-muted">
-        La disponibilidad y la asistencia son de ejemplo y todavía no se guardan. El horario sí se guarda.
+        Lo que responden las familias aparece aquí. Hasta que respondan, cada alumna figura como sin respuesta.
       </p>
 
       <div className="mb-8 flex items-center justify-between gap-3">
@@ -75,7 +70,7 @@ async function DayBody({ searchParams }: { searchParams: PageProps<"/profe/dia">
         </Link>
       </div>
 
-      <DayRoster key={date} entries={entries} />
+      <DayRoster key={date} entries={entries} initialMarks={marks} />
 
       <div className="mt-8">
         <Link href={`/profe/horario?nuevo=1&fecha=${date}`} className="btn btn-ghost">

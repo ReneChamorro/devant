@@ -23,9 +23,10 @@ import {
   setActiveProduction,
   setDateCancelled,
   setPaused,
+  setResponse,
   updateStudent,
 } from "@/lib/store";
-import { isClassKind, isValidISODate, KIND_INFO, LEVEL_KINDS, type Template } from "@/lib/schedule";
+import { isAttendance, isClassKind, isValidISODate, KIND_INFO, LEVEL_KINDS, type Template } from "@/lib/schedule";
 
 export type FormState = { errors?: Record<string, string>; message?: string } | null;
 
@@ -242,4 +243,15 @@ export async function saveCastAction(fd: FormData) {
   const ids = fd.getAll("studentIds").map(String);
   if (productionId && danceId) await saveCast(productionId, danceId, ids);
   refresh();
+}
+
+/** Teacher marks who actually came. An empty mark clears it. */
+export async function setAttendanceAction(sessionId: string, studentId: string, mark: string): Promise<{ ok: boolean }> {
+  await requireTeacher();
+  const sid = String(sessionId).slice(0, 120);
+  const stid = String(studentId).slice(0, 80);
+  if (!sid.includes("@") || !stid) return { ok: false };
+  if (mark !== "" && !isAttendance(mark)) return { ok: false };
+  await setResponse(sid, stid, "attendance", mark === "" ? null : (mark as "present" | "late" | "absent"));
+  return { ok: true };
 }

@@ -236,3 +236,24 @@ export function dancesOfStudent(studentId: string, danceIds: string[] | undefine
     p.dances.filter((d) => wanted.has(d.id) && d.studentIds.includes(studentId)).map((d) => d.name),
   );
 }
+
+/* ---------- responses ---------- */
+
+/** What a family says before the day. No record means "sin respuesta". */
+export type Availability = "yes" | "maybe" | "no";
+/** What the teacher records on the day. */
+export type Attendance = "present" | "late" | "absent";
+
+export type Response = {
+  sessionId: string; // `${templateId}@${date}`
+  studentId: string;
+  availability?: Availability;
+  attendance?: Attendance;
+};
+
+export function isAvailability(v: unknown): v is Availability {
+  return v === "yes" || v === "maybe" || v === "no";
+}
+export function isAttendance(v: unknown): v is Attendance {
+  return v === "present" || v === "late" || v === "absent";
+}
