@@ -2,18 +2,13 @@ import { Suspense } from "react";
 import Link from "next/link";
 import { Brand } from "./brand";
 import { NavLinks } from "./nav-links";
-
-const FALLBACK_LINKS = [
-  { href: "/clases", label: "Clases" },
-  { href: "/calendario", label: "Calendario" },
-  { href: "/inscripciones", label: "Inscripciones" },
-];
+import { PUBLIC_LINKS } from "@/lib/site";
 
 /** Same links without the active-page highlight, shown while the pathname streams in. */
 function NavFallback() {
   return (
     <nav aria-label="Principal" className="hidden items-center gap-1 md:flex">
-      {FALLBACK_LINKS.map((l) => (
+      {PUBLIC_LINKS.map((l) => (
         <Link key={l.href} href={l.href} className="rounded-lg px-3 py-2 text-[0.95rem] font-medium text-muted">
           {l.label}
         </Link>
@@ -29,7 +24,7 @@ export function SiteHeader() {
         <Brand />
         <div className="flex items-center gap-2">
           <Suspense fallback={<NavFallback />}>
-            <NavLinks />
+            <NavLinks links={PUBLIC_LINKS} />
           </Suspense>
           <Link href="/profe" className="btn btn-ghost hidden !min-h-10 !px-4 md:inline-flex">
             Profesores

@@ -67,6 +67,13 @@ async function ObraBody({ params }: { params: PageProps<"/profe/obras/[id]">["pa
                 </span>
               </summary>
               <div className="space-y-6 border-t border-line px-4 py-5 sm:px-5">
+                <Link
+                  href={`/profe/obras/${prod.id}/${d.id}`}
+                  className="btn btn-gold"
+                >
+                  Coreograma de {d.name}
+                </Link>
+
                 <CastPicker productionId={prod.id} danceId={d.id} students={students} initial={d.studentIds} />
 
                 <div className="flex flex-wrap items-end gap-4 border-t border-line pt-5">

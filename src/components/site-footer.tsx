@@ -15,6 +15,7 @@ export function SiteFooter() {
         <nav aria-label="Pie de página" className="flex flex-col gap-2 text-sm">
           <Link href="/clases" className="text-muted hover:text-ink">Clases y niveles</Link>
           <Link href="/calendario" className="text-muted hover:text-ink">Calendario</Link>
+          <Link href="/catalogo" className="text-muted hover:text-ink">Catálogo</Link>
           <Link href="/inscripciones" className="text-muted hover:text-ink">Inscripciones</Link>
           <a href="https://www.aballetdevant.com" className="text-muted hover:text-ink">Boletería</a>
         </nav>

@@ -1,4 +1,5 @@
 import { Suspense } from "react";
+import Link from "next/link";
 import { connection } from "next/server";
 import { DeleteButton } from "@/components/delete-button";
 import { ListSkeleton } from "@/components/list-skeleton";
@@ -74,6 +75,9 @@ async function AlumnasBody() {
                     </select>
                     <button type="submit" className="btn btn-ghost !min-h-10 !px-4 text-sm">Guardar</button>
                   </form>
+                  <Link href={`/profe/alumnas/${s.id}`} className="btn btn-ghost !min-h-10 !px-3 text-sm">
+                    Historial
+                  </Link>
                   <form action={deleteStudentAction}>
                     <input type="hidden" name="id" value={s.id} />
                     <DeleteButton label={`Eliminar a ${s.name}`} />

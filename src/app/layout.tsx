@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Cinzel_Decorative, Outfit } from "next/font/google";
 import "./globals.css";
 import { ACTIVE_SEASON } from "@/lib/season";
+import { SITE_INDEXABLE } from "@/lib/site";
 import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
 
@@ -25,6 +26,7 @@ export const metadata: Metadata = {
   },
   description:
     "Academia de ballet clásico en Chacao, Caracas. Clases desde los 3 años, niveles, horarios y calendario de ensayos.",
+  robots: SITE_INDEXABLE ? undefined : { index: false, follow: false },
 };
 
 export const viewport: Viewport = {

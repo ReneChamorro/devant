@@ -8,7 +8,21 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { SEED_PRODUCTIONS, SEED_STUDENTS, SEED_TEMPLATES } from "./seed";
-import type { Attendance, Availability, Dance, Production, Response, Student, Template } from "./schedule";
+import type {
+  AttendanceChange,
+  Choreography,
+  AttendanceRecord,
+  AttendanceStatus,
+  Dance,
+  Family,
+  FamilySession,
+  Guardian,
+  LoginCode,
+  Production,
+  SessionAttendance,
+  Student,
+  Template,
+} from "./schedule";
 
 const DIR = path.join(process.cwd(), ".data");
 
@@ -41,7 +55,9 @@ async function write<T>(name: string, data: T[]) {
 const T = "schedule.json";
 const S = "students.json";
 const P = "productions.json";
-const R = "responses.json";
+const A = "attendance.json";
+const AS = "attendance-sessions.json";
+const AL = "attendance-log.json";
 
 const readTemplates = () => read<Template>(T, SEED_TEMPLATES);
 const readStudents = () => read<Student>(S, SEED_STUDENTS);
@@ -136,7 +152,7 @@ export function deleteStudent(id: string): Promise<void> {
     const prods = await readProductions();
     for (const p of prods) for (const d of p.dances) d.studentIds = d.studentIds.filter((x) => x !== id);
     await write(P, prods);
-    await write(R, (await readResponses()).filter((r) => r.studentId !== id));
+    await write(A, (await readRecords()).filter((r) => r.studentId !== id));
   });
 }
 
@@ -164,11 +180,13 @@ export function setActiveProduction(id: string): Promise<void> {
   });
 }
 
-export function deleteProduction(id: string): Promise<void> {
-  return mutateProductions((all) => {
+export async function deleteProduction(id: string): Promise<void> {
+  const danceIds = (await readProductions()).find((p) => p.id === id)?.dances.map((d) => d.id) ?? [];
+  await mutateProductions((all) => {
     const idx = all.findIndex((p) => p.id === id);
     if (idx >= 0) all.splice(idx, 1);
   });
+  for (const danceId of danceIds) await deleteChoreography(danceId);
 }
 
 export function addDance(productionId: string, name: string): Promise<void> {
@@ -188,7 +206,7 @@ export function deleteDance(productionId: string, danceId: string): Promise<void
   return mutateProductions((all) => {
     const p = all.find((x) => x.id === productionId);
     if (p) p.dances = p.dances.filter((d) => d.id !== danceId);
-  });
+  }).then(() => deleteChoreography(danceId));
 }
 
 /** Replace the cast of a dance. Ids that are not real students are dropped. */
@@ -207,31 +225,318 @@ function findDance(all: Production[], productionId: string, danceId: string): Da
   return all.find((p) => p.id === productionId)?.dances.find((d) => d.id === danceId);
 }
 
-/* ---------- responses (family availability, teacher attendance) ---------- */
+/* ---------- attendance (teacher only) ---------- */
 
-const readResponses = () => read<Response>(R, []);
-export const loadResponses = readResponses;
+const readRecords = () => read<AttendanceRecord>(A, []);
+const readTaken = () => read<SessionAttendance>(AS, []);
+const readLog = () => read<AttendanceChange>(AL, []);
 
-/** Set one field of a response. `null` clears it; an empty record is removed. */
-export function setResponse(
-  sessionId: string,
-  studentId: string,
-  field: "availability" | "attendance",
-  value: Availability | Attendance | null,
-): Promise<void> {
+export async function loadAttendance() {
+  const [taken, records, log] = await Promise.all([readTaken(), readRecords(), readLog()]);
+  return { taken, records, log };
+}
+
+export type SaveAttendanceInput = {
+  /** Frozen copy of the session and expected students, built on the server. */
+  session: Omit<SessionAttendance, "takenBy" | "takenAt" | "updatedAt">;
+  /** Only the exceptions; everyone else is present. */
+  records: { studentId: string; status: Exclude<AttendanceStatus, "present">; note?: string }[];
+  by: string;
+  /** Why an already-saved list is being edited. */
+  editReason?: string;
+};
+
+/** Save (or re-save) the roll call of one session. Returns the saved header. */
+export function saveAttendance(input: SaveAttendanceInput): Promise<SessionAttendance> {
   return exclusive(async () => {
-    const all = await readResponses();
-    let r = all.find((x) => x.sessionId === sessionId && x.studentId === studentId);
-    if (!r) {
-      if (value === null) return;
-      r = { sessionId, studentId };
-      all.push(r);
-    }
-    if (value === null) delete r[field];
-    else (r as Record<string, unknown>)[field] = value;
-    await write(
-      R,
-      all.filter((x) => x.availability || x.attendance),
+    const [taken, records, log] = await Promise.all([readTaken(), readRecords(), readLog()]);
+    const { session, by } = input;
+    const now = new Date().toISOString();
+    const names = new Map(session.expected.map((e) => [e.id, e.name]));
+
+    const prevStatus = new Map(
+      records.filter((r) => r.sessionId === session.sessionId).map((r) => [r.studentId, r.status as AttendanceStatus]),
     );
+    const prevHeader = taken.find((t) => t.sessionId === session.sessionId);
+
+    const nextRecords: AttendanceRecord[] = input.records.map((r) => ({
+      sessionId: session.sessionId,
+      studentId: r.studentId,
+      studentName: names.get(r.studentId) ?? "",
+      status: r.status,
+      note: r.note || undefined,
+      changedBy: by,
+      changedAt: now,
+    }));
+    const nextStatus = new Map(nextRecords.map((r) => [r.studentId, r.status as AttendanceStatus]));
+
+    // Audit only edits to a list that was already saved.
+    if (prevHeader) {
+      for (const e of session.expected) {
+        const from = prevStatus.get(e.id) ?? "present";
+        const to = nextStatus.get(e.id) ?? "present";
+        if (from !== to) {
+          log.push({
+            sessionId: session.sessionId,
+            studentId: e.id,
+            studentName: e.name,
+            from,
+            to,
+            reason: input.editReason || "Sin motivo indicado",
+            by,
+            at: now,
+          });
+        }
+      }
+    }
+
+    const header: SessionAttendance = prevHeader
+      ? { ...prevHeader, ...session, takenBy: prevHeader.takenBy, takenAt: prevHeader.takenAt, updatedAt: now }
+      : { ...session, takenBy: by, takenAt: now };
+
+    await write(A, [...records.filter((r) => r.sessionId !== session.sessionId), ...nextRecords]);
+    await write(AS, [...taken.filter((t) => t.sessionId !== session.sessionId), header]);
+    await write(AL, log);
+    return header;
+  });
+}
+
+/* ---------- families, guardians, login codes, sessions ---------- */
+
+const F = "families.json";
+const G = "guardians.json";
+const LC = "login-codes.json";
+const FS = "family-sessions.json";
+
+const readFamilies = () => read<Family>(F, []);
+const readGuardians = () => read<Guardian>(G, []);
+const readCodes = () => read<LoginCode>(LC, []);
+const readFamilySessions = () => read<FamilySession>(FS, []);
+
+export const loadFamilies = readFamilies;
+export const loadGuardians = readGuardians;
+
+export function addFamily(name: string): Promise<string> {
+  return exclusive(async () => {
+    const all = await readFamilies();
+    const id = randomUUID();
+    all.push({ id, name, active: true, studentIds: [] });
+    await write(F, all);
+    return id;
+  });
+}
+
+export function setFamilyActive(id: string, active: boolean): Promise<void> {
+  return exclusive(async () => {
+    const all = await readFamilies();
+    const f = all.find((x) => x.id === id);
+    if (!f) return;
+    f.active = active;
+    await write(F, all);
+  });
+}
+
+/** Deletes the family, its adults, their codes and sessions. Students stay. */
+export function deleteFamily(id: string): Promise<void> {
+  return exclusive(async () => {
+    const guardians = await readGuardians();
+    const gone = new Set(guardians.filter((g) => g.familyId === id).map((g) => g.id));
+    await write(F, (await readFamilies()).filter((f) => f.id !== id));
+    await write(G, guardians.filter((g) => g.familyId !== id));
+    await write(LC, (await readCodes()).filter((c) => !gone.has(c.guardianId)));
+    await write(FS, (await readFamilySessions()).filter((s) => !gone.has(s.guardianId)));
+  });
+}
+
+/** Replace the students linked to a family. Unknown ids are dropped. */
+export function saveFamilyStudents(id: string, studentIds: string[]): Promise<void> {
+  return exclusive(async () => {
+    const valid = new Set((await readStudents()).map((s) => s.id));
+    const all = await readFamilies();
+    const f = all.find((x) => x.id === id);
+    if (!f) return;
+    f.studentIds = [...new Set(studentIds)].filter((sid) => valid.has(sid));
+    await write(F, all);
+  });
+}
+
+/** Returns an error message, or null when the adult was added. */
+export function addGuardian(familyId: string, name: string, relation: string, email: string): Promise<string | null> {
+  return exclusive(async () => {
+    if (!(await readFamilies()).some((f) => f.id === familyId)) return "La familia ya no existe.";
+    const all = await readGuardians();
+    if (all.some((g) => g.email === email)) return "Ese correo ya está registrado en una familia.";
+    all.push({ id: randomUUID(), familyId, name, relation, email });
+    await write(G, all);
+    return null;
+  });
+}
+
+/** Revoking also closes every open session of that adult. */
+export function setGuardianRevoked(id: string, revoked: boolean): Promise<void> {
+  return exclusive(async () => {
+    const all = await readGuardians();
+    const g = all.find((x) => x.id === id);
+    if (!g) return;
+    g.revokedAt = revoked ? new Date().toISOString() : undefined;
+    await write(G, all);
+    if (revoked) {
+      const now = new Date().toISOString();
+      const sessions = await readFamilySessions();
+      for (const s of sessions) if (s.guardianId === id && !s.revokedAt) s.revokedAt = now;
+      await write(FS, sessions);
+    }
+  });
+}
+
+export function deleteGuardian(id: string): Promise<void> {
+  return exclusive(async () => {
+    await write(G, (await readGuardians()).filter((g) => g.id !== id));
+    await write(LC, (await readCodes()).filter((c) => c.guardianId !== id));
+    await write(FS, (await readFamilySessions()).filter((s) => s.guardianId !== id));
+  });
+}
+
+export async function findGuardianByEmail(email: string): Promise<Guardian | undefined> {
+  return (await readGuardians()).find((g) => g.email === email);
+}
+
+const CODE_TTL_MS = 10 * 60 * 1000;
+const MAX_CODES_PER_WINDOW = 3;
+const WINDOW_MS = 15 * 60 * 1000;
+
+/** Stores a new code unless the adult asked for too many recently. Returns false when rate limited. */
+export function createLoginCode(guardianId: string, codeHash: string): Promise<boolean> {
+  return exclusive(async () => {
+    const now = Date.now();
+    const all = (await readCodes()).filter((c) => now - Date.parse(c.createdAt) < 24 * 60 * 60 * 1000);
+    const recent = all.filter((c) => c.guardianId === guardianId && now - Date.parse(c.createdAt) < WINDOW_MS);
+    if (recent.length >= MAX_CODES_PER_WINDOW) {
+      await write(LC, all);
+      return false;
+    }
+    // A new code invalidates older unused ones.
+    for (const c of all) if (c.guardianId === guardianId && !c.usedAt) c.usedAt = new Date(now).toISOString();
+    all.push({
+      id: randomUUID(),
+      guardianId,
+      codeHash,
+      createdAt: new Date(now).toISOString(),
+      expiresAt: new Date(now + CODE_TTL_MS).toISOString(),
+      attempts: 0,
+    });
+    await write(LC, all);
+    return true;
+  });
+}
+
+/**
+ * Checks the hash of the typed code against the newest unused one.
+ * Wrong tries are counted; after 5 the code is dead. A right code is consumed.
+ */
+export function consumeLoginCode(guardianId: string, typedHash: string): Promise<"ok" | "bad" | "expired"> {
+  return exclusive(async () => {
+    const all = await readCodes();
+    const now = Date.now();
+    const code = all
+      .filter((c) => c.guardianId === guardianId && !c.usedAt)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
+    if (!code) return "expired";
+    if (Date.parse(code.expiresAt) < now || code.attempts >= 5) {
+      code.usedAt = new Date(now).toISOString();
+      await write(LC, all);
+      return "expired";
+    }
+    if (typedHash !== code.codeHash) {
+      code.attempts += 1;
+      if (code.attempts >= 5) code.usedAt = new Date(now).toISOString();
+      await write(LC, all);
+      return "bad";
+    }
+    code.usedAt = new Date(now).toISOString();
+    await write(LC, all);
+    return "ok";
+  });
+}
+
+export function createFamilySession(guardianId: string): Promise<FamilySession> {
+  return exclusive(async () => {
+    const now = new Date().toISOString();
+    const s: FamilySession = { id: randomUUID(), guardianId, createdAt: now, lastUsedAt: now };
+    const all = await readFamilySessions();
+    all.push(s);
+    await write(FS, all);
+    const guardians = await readGuardians();
+    const g = guardians.find((x) => x.id === guardianId);
+    if (g) {
+      g.lastLoginAt = now;
+      await write(G, guardians);
+    }
+    return s;
+  });
+}
+
+export function revokeFamilySession(id: string): Promise<void> {
+  return exclusive(async () => {
+    const all = await readFamilySessions();
+    const s = all.find((x) => x.id === id);
+    if (!s || s.revokedAt) return;
+    s.revokedAt = new Date().toISOString();
+    await write(FS, all);
+  });
+}
+
+/** Active viewer for a session id: the session, adult and family must all be valid. */
+export async function resolveFamilySession(id: string) {
+  const [sessions, guardians, families] = await Promise.all([readFamilySessions(), readGuardians(), readFamilies()]);
+  const session = sessions.find((s) => s.id === id);
+  if (!session || session.revokedAt) return null;
+  const guardian = guardians.find((g) => g.id === session.guardianId);
+  if (!guardian || guardian.revokedAt) return null;
+  const family = families.find((f) => f.id === guardian.familyId);
+  if (!family || !family.active) return null;
+  return { session, guardian, family };
+}
+
+/* ---------- choreographies ---------- */
+
+const C = "choreographies.json";
+const readChoreos = () => read<Choreography>(C, []);
+
+export async function loadChoreographies(): Promise<Choreography[]> {
+  return readChoreos();
+}
+
+export async function getChoreography(danceId: string): Promise<Choreography | undefined> {
+  return (await readChoreos()).find((c) => c.danceId === danceId);
+}
+
+/**
+ * Saves a choreography only when `expectedVersion` matches what is stored (0 for a new one).
+ * Returns the saved record, or "conflict" when someone else saved in between.
+ */
+export function saveChoreography(
+  input: Omit<Choreography, "id" | "version" | "updatedAt">,
+  expectedVersion: number,
+): Promise<Choreography | "conflict"> {
+  return exclusive(async () => {
+    const all = await readChoreos();
+    const prev = all.find((c) => c.danceId === input.danceId);
+    if ((prev?.version ?? 0) !== expectedVersion) return "conflict";
+    const saved: Choreography = {
+      ...input,
+      id: prev?.id ?? randomUUID(),
+      version: expectedVersion + 1,
+      updatedAt: new Date().toISOString(),
+    };
+    await write(C, [...all.filter((c) => c.danceId !== input.danceId), saved]);
+    return saved;
+  });
+}
+
+/** Removes the choreography of a dance (used when the dance or its production is deleted). */
+export function deleteChoreography(danceId: string): Promise<void> {
+  return exclusive(async () => {
+    await write(C, (await readChoreos()).filter((c) => c.danceId !== danceId));
   });
 }

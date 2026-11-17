@@ -195,11 +195,6 @@ export type Production = {
   dances: Dance[];
 };
 
-/** Demo families until accounts are real. Student ids match the seed roster. */
-export const DEMO_FAMILIES: Record<string, { name: string; pin: string; studentIds: string[] }> = {
-  demo: { name: "Familia Rojas Ochoa", pin: "1234", studentIds: ["s1", "s2"] },
-};
-
 /** Who is expected at a session. Rehearsals of chosen dances use the cast picked by teachers. */
 export function studentsForSession(
   s: Pick<Session, "kind" | "danceIds">,
@@ -237,23 +232,137 @@ export function dancesOfStudent(studentId: string, danceIds: string[] | undefine
   );
 }
 
-/* ---------- responses ---------- */
+/* ---------- attendance (recorded by teachers only) ---------- */
 
-/** What a family says before the day. No record means "sin respuesta". */
-export type Availability = "yes" | "maybe" | "no";
-/** What the teacher records on the day. */
-export type Attendance = "present" | "late" | "absent";
+export type AttendanceStatus = "present" | "late" | "absent" | "excused";
 
-export type Response = {
-  sessionId: string; // `${templateId}@${date}`
-  studentId: string;
-  availability?: Availability;
-  attendance?: Attendance;
+export const ATTENDANCE_LABEL: Record<AttendanceStatus, string> = {
+  present: "Presente",
+  late: "Tarde",
+  absent: "Ausente",
+  excused: "Justificada",
 };
 
-export function isAvailability(v: unknown): v is Availability {
-  return v === "yes" || v === "maybe" || v === "no";
+export function isAttendanceStatus(v: unknown): v is AttendanceStatus {
+  return v === "present" || v === "late" || v === "absent" || v === "excused";
 }
-export function isAttendance(v: unknown): v is Attendance {
-  return v === "present" || v === "late" || v === "absent";
+
+/** One exception to "everyone is present". No record for a student means present. */
+export type AttendanceRecord = {
+  sessionId: string; // `${templateId}@${date}`
+  studentId: string;
+  studentName: string;
+  status: Exclude<AttendanceStatus, "present">;
+  /** Required when excused (the reason the family gave), optional otherwise. */
+  note?: string;
+  changedBy: string;
+  changedAt: string; // ISO timestamp
+};
+
+/** A saved roll call: frozen copy of the session and of who was expected, so later changes do not rewrite the past. */
+export type SessionAttendance = {
+  sessionId: string;
+  templateId: string;
+  date: string;
+  start: string;
+  end: string;
+  kind: ClassKind;
+  title: string;
+  production?: string;
+  danceIds?: string[];
+  danceNames?: string[];
+  expected: { id: string; name: string }[];
+  takenBy: string;
+  takenAt: string;
+  updatedAt?: string;
+};
+
+/** Audit trail of edits made after the roll call was first saved. */
+export type AttendanceChange = {
+  sessionId: string;
+  studentId: string;
+  studentName: string;
+  from: AttendanceStatus;
+  to: AttendanceStatus;
+  reason: string;
+  by: string;
+  at: string;
+};
+
+/* ---------- families (access by email) ---------- */
+
+export type Family = {
+  id: string;
+  name: string;
+  active: boolean;
+  studentIds: string[];
+};
+
+export type Guardian = {
+  id: string;
+  familyId: string;
+  name: string;
+  relation: string;
+  /** Lowercase. Unique among guardians. */
+  email: string;
+  revokedAt?: string;
+  lastLoginAt?: string;
+};
+
+export type LoginCode = {
+  id: string;
+  guardianId: string;
+  codeHash: string;
+  createdAt: string;
+  expiresAt: string;
+  attempts: number;
+  usedAt?: string;
+};
+
+export type FamilySession = {
+  id: string;
+  guardianId: string;
+  createdAt: string;
+  lastUsedAt: string;
+  revokedAt?: string;
+};
+
+export function normalizeEmail(v: string): string {
+  return v.trim().toLowerCase().slice(0, 200);
 }
+
+export function isEmail(v: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
+}
+
+/* ---------- choreography (formations on stage) ---------- */
+
+/** Position on stage, 0 to 1. x: left to right. y: back of the stage (0) to the audience (1). */
+export type Point = { x: number; y: number };
+
+export type Formation = {
+  id: string;
+  name: string;
+  /** Free text, e.g. "1 a 8". */
+  counts: string;
+  /** How long the formation is held, in milliseconds. */
+  holdMs: number;
+  /** How long the move to the NEXT formation takes, in milliseconds. */
+  transitionMs: number;
+  note: string;
+  /** Student id to position. */
+  positions: Record<string, Point>;
+};
+
+export type Choreography = {
+  id: string;
+  danceId: string;
+  /** Meters. Only the proportions matter on screen. */
+  stage: { width: number; depth: number };
+  music?: { title: string; url: string };
+  formations: Formation[];
+  /** Bumped on every save, so a stale editor cannot overwrite a newer edit. */
+  version: number;
+  updatedBy: string;
+  updatedAt: string;
+};

@@ -1,14 +1,20 @@
 import Link from "next/link";
 import { logoutAction } from "@/app/profe/actions";
+import { FAMILIES_ENABLED } from "@/lib/site";
 
-const LINKS = [
+const ALL_LINKS = [
   { id: "dia", href: "/profe/dia", label: "Vista del día" },
   { id: "horario", href: "/profe/horario", label: "Horario" },
   { id: "obras", href: "/profe/obras", label: "Obras y bailes" },
   { id: "alumnas", href: "/profe/alumnas", label: "Alumnas" },
+  { id: "familias", href: "/profe/familias", label: "Familias" },
+  { id: "reportes", href: "/profe/reportes", label: "Reportes" },
 ] as const;
 
-export function TeacherNav({ current, name }: { current: (typeof LINKS)[number]["id"]; name: string }) {
+// "Familias" stays hidden until the client agrees to use it (FAMILIES_ENABLED).
+const LINKS = ALL_LINKS.filter((l) => FAMILIES_ENABLED || l.id !== "familias");
+
+export function TeacherNav({ current, name }: { current: (typeof ALL_LINKS)[number]["id"]; name: string }) {
   return (
     <div className="mb-8 flex flex-wrap items-center justify-between gap-3 border-b border-line pb-4">
       <nav aria-label="Zona de profesores" className="flex flex-wrap gap-1">

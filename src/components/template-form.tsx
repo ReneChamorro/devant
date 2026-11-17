@@ -289,7 +289,7 @@ export function TemplateForm({
       )}
 
       <div className="space-y-2">
-        <label htmlFor="note" className="block text-sm font-medium">Nota para las familias (opcional)</label>
+        <label htmlFor="note" className="block text-sm font-medium">Nota visible en el calendario (opcional)</label>
         <textarea
           id="note"
           name="note"

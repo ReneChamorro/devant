@@ -10,23 +10,46 @@ import {
 } from "@/lib/auth";
 import {
   addDance,
+  addFamily,
+  addGuardian,
   addProduction,
   addStudent,
   deleteDance,
+  deleteFamily,
+  deleteGuardian,
   deleteProduction,
   deleteStudent,
   deleteTemplate,
+  loadAll,
+  loadAttendance,
   loadProductions,
   renameDance,
+  saveAttendance,
   saveCast,
+  saveChoreography,
+  saveFamilyStudents,
   saveTemplate,
   setActiveProduction,
+  setFamilyActive,
+  setGuardianRevoked,
   setDateCancelled,
   setPaused,
-  setResponse,
   updateStudent,
 } from "@/lib/store";
-import { isAttendance, isClassKind, isValidISODate, KIND_INFO, LEVEL_KINDS, type Template } from "@/lib/schedule";
+import { sanitizeChoreography } from "@/lib/choreo";
+import {
+  isAttendanceStatus,
+  isClassKind,
+  isEmail,
+  isValidISODate,
+  KIND_INFO,
+  LEVEL_KINDS,
+  normalizeEmail,
+  sessionsForDate,
+  studentsForSession,
+  todayCaracas,
+  type Template,
+} from "@/lib/schedule";
 
 export type FormState = { errors?: Record<string, string>; message?: string } | null;
 
@@ -37,7 +60,10 @@ function str(fd: FormData, key: string, max: number) {
 }
 
 function refresh() {
-  for (const p of ["/", "/calendario", "/profe/dia", "/profe/horario", "/profe/obras", "/profe/alumnas"]) revalidatePath(p);
+  for (const p of ["/", "/calendario", "/profe/dia", "/profe/horario", "/profe/obras", "/profe/alumnas", "/profe/reportes"]) revalidatePath(p);
+  revalidatePath("/profe/alumnas/[id]", "page");
+  revalidatePath("/profe/familias");
+  revalidatePath("/familia");
   revalidatePath("/profe/obras/[id]", "page");
   revalidatePath("/f/[token]", "page");
 }
@@ -245,13 +271,165 @@ export async function saveCastAction(fd: FormData) {
   refresh();
 }
 
-/** Teacher marks who actually came. An empty mark clears it. */
-export async function setAttendanceAction(sessionId: string, studentId: string, mark: string): Promise<{ ok: boolean }> {
+/* ---------- attendance (recorded by teachers only) ---------- */
+
+export type SaveAttendanceResult =
+  | { ok: true; takenBy: string; takenAt: string; updatedAt?: string }
+  | { ok: false; error: string };
+
+/**
+ * Saves the roll call of one session. Only exceptions arrive; everyone else counts as present.
+ * The server decides who was expected, so a forged id cannot add students.
+ */
+export async function saveAttendanceAction(input: {
+  sessionId: string;
+  records: { studentId: string; status: string; note?: string }[];
+  editReason?: string;
+}): Promise<SaveAttendanceResult> {
+  const teacher = await requireTeacher();
+  const sessionId = String(input.sessionId ?? "").slice(0, 120);
+  const [templateId, date] = sessionId.split("@");
+  if (!templateId || !isValidISODate(date)) return { ok: false, error: "Clase no válida." };
+
+  const today = todayCaracas();
+  if (date > today) return { ok: false, error: "No se puede tomar lista de un día que aún no llega." };
+
+  const { templates, students, productions } = await loadAll();
+  const session = sessionsForDate(templates, date, false, productions).find((x) => x.id === sessionId);
+  if (!session) return { ok: false, error: "Esa clase ya no está en el horario de ese día." };
+
+  const expected = studentsForSession(session, students, productions);
+  const expectedIds = new Set(expected.map((e) => e.id));
+
+  const seen = new Set<string>();
+  const records: { studentId: string; status: "late" | "absent" | "excused"; note?: string }[] = [];
+  for (const r of input.records ?? []) {
+    const studentId = String(r.studentId ?? "");
+    if (!expectedIds.has(studentId) || seen.has(studentId)) continue;
+    seen.add(studentId);
+    if (!isAttendanceStatus(r.status)) return { ok: false, error: "Estado de asistencia no válido." };
+    if (r.status === "present") continue;
+    const note = String(r.note ?? "").trim().slice(0, 200);
+    if (r.status === "excused" && note.length < 2) {
+      const who = expected.find((e) => e.id === studentId)?.name ?? "la alumna";
+      return { ok: false, error: `Escribe el motivo de la ausencia justificada de ${who}.` };
+    }
+    records.push({ studentId, status: r.status, note: note || undefined });
+  }
+
+  const prior = (await loadAttendance()).taken.find((t) => t.sessionId === sessionId);
+  const editReason = String(input.editReason ?? "").trim().slice(0, 200);
+  if (prior && date < today && editReason.length < 3) {
+    return { ok: false, error: "Esta lista es de un día anterior. Escribe el motivo del cambio." };
+  }
+
+  const saved = await saveAttendance({
+    session: {
+      sessionId,
+      templateId,
+      date,
+      start: session.start,
+      end: session.end,
+      kind: session.kind,
+      title: session.title,
+      production: session.production,
+      danceIds: session.danceIds,
+      danceNames: session.danceNames,
+      expected: expected.map((e) => ({ id: e.id, name: e.name })),
+    },
+    records,
+    by: teacher.name,
+    editReason: editReason || undefined,
+  });
+  refresh();
+  return { ok: true, takenBy: saved.takenBy, takenAt: saved.takenAt, updatedAt: saved.updatedAt };
+}
+
+/* ---------- families (access by email) ---------- */
+
+export async function addFamilyAction(fd: FormData) {
   await requireTeacher();
-  const sid = String(sessionId).slice(0, 120);
-  const stid = String(studentId).slice(0, 80);
-  if (!sid.includes("@") || !stid) return { ok: false };
-  if (mark !== "" && !isAttendance(mark)) return { ok: false };
-  await setResponse(sid, stid, "attendance", mark === "" ? null : (mark as "present" | "late" | "absent"));
+  const name = str(fd, "name", 80);
+  if (name) await addFamily(name);
+  refresh();
+}
+
+export async function deleteFamilyAction(fd: FormData) {
+  await requireTeacher();
+  const id = str(fd, "id", 80);
+  if (id) await deleteFamily(id);
+  refresh();
+}
+
+export async function setFamilyActiveAction(fd: FormData) {
+  await requireTeacher();
+  const id = str(fd, "id", 80);
+  if (id) await setFamilyActive(id, fd.get("active") === "1");
+  refresh();
+}
+
+export async function saveFamilyStudentsAction(fd: FormData) {
+  await requireTeacher();
+  const id = str(fd, "familyId", 80);
+  if (id) await saveFamilyStudents(id, fd.getAll("studentIds").map(String));
+  refresh();
+}
+
+export type GuardianState = { error?: string; ok?: boolean } | null;
+
+export async function addGuardianAction(_prev: GuardianState, fd: FormData): Promise<GuardianState> {
+  await requireTeacher();
+  const familyId = str(fd, "familyId", 80);
+  const name = str(fd, "name", 80);
+  const relation = str(fd, "relation", 40);
+  const email = normalizeEmail(String(fd.get("email") ?? ""));
+  if (!familyId || !name) return { error: "Escribe el nombre del adulto." };
+  if (!isEmail(email)) return { error: "Escribe un correo válido." };
+  const error = await addGuardian(familyId, name, relation, email);
+  if (error) return { error };
+  refresh();
   return { ok: true };
+}
+
+export async function setGuardianRevokedAction(fd: FormData) {
+  await requireTeacher();
+  const id = str(fd, "id", 80);
+  if (id) await setGuardianRevoked(id, fd.get("revoked") === "1");
+  refresh();
+}
+
+export async function deleteGuardianAction(fd: FormData) {
+  await requireTeacher();
+  const id = str(fd, "id", 80);
+  if (id) await deleteGuardian(id);
+  refresh();
+}
+
+/* ---------- choreography ---------- */
+
+export type SaveChoreoResult = { ok: true; version: number; updatedAt: string } | { ok: false; error: string };
+
+export async function saveChoreographyAction(
+  danceId: string,
+  expectedVersion: number,
+  payload: unknown,
+): Promise<SaveChoreoResult> {
+  const teacher = await requireTeacher();
+  const dance = (await loadProductions()).flatMap((p) => p.dances).find((d) => d.id === String(danceId));
+  if (!dance) return { ok: false, error: "Ese baile ya no existe." };
+
+  // Only the current cast keeps a position; everything else is clamped or dropped.
+  const clean = sanitizeChoreography(payload, dance.studentIds);
+  if (!clean) return { ok: false, error: "Los datos del coreograma no son válidos." };
+
+  const saved = await saveChoreography(
+    { danceId: dance.id, ...clean, updatedBy: teacher.name },
+    Number.isInteger(expectedVersion) ? expectedVersion : 0,
+  );
+  if (saved === "conflict") {
+    return { ok: false, error: "Otra persona guardó cambios mientras editabas. Recarga la página para ver la versión nueva." };
+  }
+  refresh();
+  revalidatePath("/familia/baile/[danceId]", "page");
+  return { ok: true, version: saved.version, updatedAt: saved.updatedAt };
 }

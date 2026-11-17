@@ -5,13 +5,7 @@ import { usePathname } from "next/navigation";
 import { useState } from "react";
 import { List, X } from "@phosphor-icons/react";
 
-const LINKS = [
-  { href: "/clases", label: "Clases" },
-  { href: "/calendario", label: "Calendario" },
-  { href: "/inscripciones", label: "Inscripciones" },
-];
-
-export function NavLinks() {
+export function NavLinks({ links: LINKS }: { links: { href: string; label: string }[] }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
 

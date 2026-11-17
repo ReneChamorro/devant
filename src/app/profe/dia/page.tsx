@@ -2,11 +2,11 @@ import { Suspense } from "react";
 import { connection } from "next/server";
 import Link from "next/link";
 import { CaretLeft, CaretRight, Plus } from "@phosphor-icons/react/dist/ssr";
-import { DayRoster, type RosterEntry } from "@/components/day-roster";
-import type { Attendance as Mark } from "@/lib/schedule";
+import { AttendanceList, type RosterEntry } from "@/components/attendance-list";
 import { ListSkeleton } from "@/components/list-skeleton";
 import { TeacherNav } from "@/components/teacher-nav";
 import { requireTeacher } from "@/lib/auth";
+import { watchFor } from "@/lib/attendance";
 import {
   addDays,
   dancesOfStudent,
@@ -16,7 +16,7 @@ import {
   studentsForSession,
   todayCaracas,
 } from "@/lib/schedule";
-import { loadAll, loadResponses } from "@/lib/store";
+import { loadAll, loadAttendance } from "@/lib/store";
 
 export const metadata = { title: "Vista del día" };
 
@@ -36,26 +36,53 @@ async function DayBody({ searchParams }: { searchParams: PageProps<"/profe/dia">
   const teacher = await requireTeacher();
   const sp = await searchParams;
   const raw = Array.isArray(sp.fecha) ? sp.fecha[0] : sp.fecha;
-  const date = isValidISODate(raw) ? raw : todayCaracas();
+  const today = todayCaracas();
+  const date = isValidISODate(raw) ? raw : today;
 
-  const [{ templates, students, productions }, responses] = await Promise.all([loadAll(), loadResponses()]);
-  const byKey = new Map(responses.map((r) => [`${r.sessionId}:${r.studentId}`, r]));
-  const marks: Record<string, Mark> = {};
-  for (const r of responses) if (r.attendance) marks[`${r.sessionId}:${r.studentId}`] = r.attendance;
-  const entries: RosterEntry[] = sessionsForDate(templates, date, true, productions).map((session) => ({
-    session,
-    students: studentsForSession(session, students, productions).map((st) => ({
-      ...st,
-      avail: byKey.get(`${session.id}:${st.id}`)?.availability ?? "none",
-      dances: dancesOfStudent(st.id, session.danceIds, productions),
-    })),
-  }));
+  const [{ templates, students, productions }, { taken, records }] = await Promise.all([loadAll(), loadAttendance()]);
+
+  const entries: RosterEntry[] = sessionsForDate(templates, date, true, productions).map((session) => {
+    const expected = studentsForSession(session, students, productions);
+    const header = taken.find((t) => t.sessionId === session.id) ?? null;
+    const initial: RosterEntry["initial"] = {};
+    for (const r of records) {
+      if (r.sessionId === session.id) initial[r.studentId] = { status: r.status, note: r.note };
+    }
+
+    const attention: string[] = [];
+    const rows = expected.map((st) => {
+      const w = watchFor(st.id, session.kind, session.date + session.start, taken, records);
+      const parts: string[] = [];
+      if (w.streak >= 2) parts.push(`${w.streak} faltas seguidas`);
+      if (w.lastExcusedNote) parts.push(`justificada la última vez: ${w.lastExcusedNote}`);
+      if (session.kind === "ensayo") {
+        if (w.streak >= 2) attention.push(`${st.name}: ${w.streak} faltas seguidas`);
+        if (w.lastExcusedNote) attention.push(`${st.name}: justificada la última vez (${w.lastExcusedNote})`);
+      }
+      return {
+        id: st.id,
+        name: st.name,
+        dances: dancesOfStudent(st.id, session.danceIds, productions),
+        watch: parts.length ? parts.join(". ") : undefined,
+      };
+    });
+
+    return {
+      session,
+      students: rows,
+      saved: header ? { takenBy: header.takenBy, takenAt: header.takenAt, updatedAt: header.updatedAt } : null,
+      initial,
+      isPast: date < today,
+      isFuture: date > today,
+      attention,
+    };
+  });
 
   return (
     <>
       <TeacherNav current="dia" name={teacher.name} />
-      <p className="mb-6 text-sm text-muted">
-        Lo que responden las familias aparece aquí. Hasta que respondan, cada alumna figura como sin respuesta.
+      <p className="mb-6 max-w-[60ch] text-sm text-muted">
+        Todas las alumnas aparecen como presentes. Marca solo a quien llegó tarde, faltó o tiene falta justificada, y guarda la lista.
       </p>
 
       <div className="mb-8 flex items-center justify-between gap-3">
@@ -64,13 +91,14 @@ async function DayBody({ searchParams }: { searchParams: PageProps<"/profe/dia">
         </Link>
         <p className="text-center font-semibold">
           {formatDayCap(date, { weekday: "long", day: "numeric", month: "long" })}
+          {date === today && <span className="chip ml-2 align-middle">Hoy</span>}
         </p>
         <Link href={`/profe/dia?fecha=${addDays(date, 1)}`} className="btn btn-ghost !px-3" aria-label="Día siguiente">
           <CaretRight size={20} aria-hidden="true" />
         </Link>
       </div>
 
-      <DayRoster key={date} entries={entries} initialMarks={marks} />
+      <AttendanceList key={date} entries={entries} />
 
       <div className="mt-8">
         <Link href={`/profe/horario?nuevo=1&fecha=${date}`} className="btn btn-ghost">

@@ -75,7 +75,7 @@ async function HorarioBody({ searchParams }: { searchParams: PageProps<"/profe/h
       ) : (
         <div className="mb-8 flex flex-wrap items-center justify-between gap-3">
           <p className="max-w-[52ch] text-muted">
-            Lo que cambies aquí se ve al instante en el calendario público y en la semana de cada familia.
+            Lo que cambies aquí se ve al instante en el calendario público.
           </p>
           <Link href="/profe/horario?nuevo=1" className="btn btn-gold">
             <Plus size={20} aria-hidden="true" /> Nueva actividad

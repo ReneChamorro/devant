@@ -105,7 +105,7 @@ export default function Home() {
         <Reveal className="space-y-4 self-start">
           <h2 id="hoy" className="text-3xl sm:text-4xl">Lo que pasa hoy en Devant</h2>
           <p className="text-muted">
-            Clases y ensayos del día, siempre al día. Las familias reciben su enlace personal para avisar si asisten.
+            Clases y ensayos del día, siempre al día.
           </p>
           <Link href="/calendario" className="btn btn-ghost">Ver la semana completa</Link>
         </Reveal>
