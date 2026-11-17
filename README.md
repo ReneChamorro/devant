@@ -6,7 +6,7 @@ Web interna de la Academia de Ballet Clásico Devant: calendario de clases y ens
 
 - **Público (sin cuenta):** `/`, `/clases`, `/calendario`, `/catalogo`, `/inscripciones`.
 - **Familias (con correo), ESCONDIDO hasta hablarlo con el cliente:** con `FAMILIES_ENABLED` sin definir, `/entrar`, `/familia` y `/profe/familias` dan 404 y no aparecen en los menús. Para reactivarlo: `FAMILIES_ENABLED=true`. Lo que sigue describe cómo funciona cuando está activo: `/entrar` pide el correo del adulto y le envía un código de 6 números; entra a `/familia` (su semana y sus bailes) y a `/familia/baile/[id]` (el coreograma de los bailes donde baila su hija). Las familias solo ven; no escriben nada.
-- **Profesoras (con cuenta):** `/profe` (login), `/profe/dia` (lista de asistencia por excepciones), `/profe/horario`, `/profe/obras` (obras, bailes, elenco y coreograma), `/profe/alumnas`, `/profe/familias`, `/profe/reportes`.
+- **Profesoras (con cuenta):** `/profe` (login), `/profe/dia` (lista de asistencia por excepciones), `/profe/horario`, `/profe/obras` (obras, bailes, elenco y coreograma), `/profe/alumnas`, `/profe/catalogo`, `/profe/reportes` (y `/profe/familias` si se activa).
 
 Uso interno por defecto: con `SITE_INDEXABLE` sin definir, todas las páginas llevan `noindex` y `robots.txt` bloquea todo.
 
@@ -38,7 +38,9 @@ En `/profe/obras/[obra]/[baile]` cada baile tiene un escenario visto desde arrib
 
 ## Catálogo
 
-`/catalogo` muestra los implementos de ballet que vende una persona de la academia: foto, nombre y precio, sin carrito. Los productos están en `src/lib/catalog.ts` y por ahora son de ejemplo (nombres y precios de relleno). Para poner una foto real, copia el archivo a `public/catalogo/` y escribe su ruta en `image` (por ejemplo `"/catalogo/mallas.jpg"`). Sin foto se ve un recuadro de relleno. Editar productos desde la web queda para más adelante.
+`/catalogo` (público) muestra los implementos de ballet que vende una persona de la academia: foto, nombre y precio, sin carrito. Las profesoras lo editan en `/profe/catalogo`: agregar, cambiar nombre, precio o foto, quitar la foto y eliminar productos. El navegador reduce cada foto a 1200 px antes de subirla y el servidor solo acepta JPG, PNG o WebP (revisa el contenido real del archivo, máximo 5 MB).
+
+Los productos se guardan en `.data/catalog.json` y las fotos en `.data/catalog/` (servidas por `/catalogo/imagen/<archivo>`). Mientras no se guarde ningún cambio se muestran 8 productos de ejemplo (`SEED_PRODUCTS` en `src/lib/catalog.ts`, nombres y precios de relleno): elimínalos y agrega los reales. Sin foto se ve un recuadro de relleno. Con Supabase, las fotos pasarían a Storage.
 
 ## Datos y estado
 

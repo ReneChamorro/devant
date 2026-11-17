@@ -17,6 +17,7 @@ import {
   deleteDance,
   deleteFamily,
   deleteGuardian,
+  deleteProduct,
   deleteProduction,
   deleteStudent,
   deleteTemplate,
@@ -28,6 +29,8 @@ import {
   saveCast,
   saveChoreography,
   saveFamilyStudents,
+  saveProduct,
+  saveProductImage,
   saveTemplate,
   setActiveProduction,
   setFamilyActive,
@@ -37,6 +40,7 @@ import {
   updateStudent,
 } from "@/lib/store";
 import { sanitizeChoreography } from "@/lib/choreo";
+import { MAX_IMAGE_BYTES, parsePrice } from "@/lib/catalog";
 import {
   isAttendanceStatus,
   isClassKind,
@@ -60,7 +64,7 @@ function str(fd: FormData, key: string, max: number) {
 }
 
 function refresh() {
-  for (const p of ["/", "/calendario", "/profe/dia", "/profe/horario", "/profe/obras", "/profe/alumnas", "/profe/reportes"]) revalidatePath(p);
+  for (const p of ["/", "/calendario", "/profe/dia", "/profe/horario", "/profe/obras", "/profe/alumnas", "/profe/reportes", "/catalogo", "/profe/catalogo"]) revalidatePath(p);
   revalidatePath("/profe/alumnas/[id]", "page");
   revalidatePath("/profe/familias");
   revalidatePath("/familia");
@@ -432,4 +436,48 @@ export async function saveChoreographyAction(
   refresh();
   revalidatePath("/familia/baile/[danceId]", "page");
   return { ok: true, version: saved.version, updatedAt: saved.updatedAt };
+}
+
+/* ---------- catalog ---------- */
+
+export type ProductState = { error?: string; ok?: boolean } | null;
+
+/** Looks at the first bytes, not at the name or the type the browser claims. */
+function imageKind(b: Buffer): "jpg" | "png" | "webp" | null {
+  if (b.length > 12 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return "jpg";
+  if (b.length > 12 && b.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return "png";
+  if (b.length > 12 && b.toString("ascii", 0, 4) === "RIFF" && b.toString("ascii", 8, 12) === "WEBP") return "webp";
+  return null;
+}
+
+export async function saveProductAction(_prev: ProductState, fd: FormData): Promise<ProductState> {
+  await requireTeacher();
+  const id = str(fd, "id", 80);
+  const name = str(fd, "name", 80);
+  const price = parsePrice(str(fd, "price", 20));
+  if (!name) return { error: "Escribe el nombre del producto." };
+  if (price === null) return { error: "El precio no es válido. Usa un número, por ejemplo 12,50." };
+
+  let image: string | undefined;
+  const file = fd.get("image");
+  if (file instanceof File && file.size > 0) {
+    if (file.size > MAX_IMAGE_BYTES) return { error: "La foto pesa demasiado. El máximo es 5 MB." };
+    const bytes = Buffer.from(await file.arrayBuffer());
+    const kind = imageKind(bytes);
+    if (!kind) return { error: "La foto debe ser JPG, PNG o WebP." };
+    image = await saveProductImage(bytes, kind);
+  }
+
+  const result = await saveProduct({ id: id || undefined, name, price, image, removeImage: fd.get("removeImage") === "on" });
+  if (result === "full") return { error: "Se alcanzó el máximo de productos. Elimina alguno para agregar otro." };
+  if (result === "missing") return { error: "Ese producto ya no existe. Recarga la página." };
+  refresh();
+  return { ok: true };
+}
+
+export async function deleteProductAction(fd: FormData) {
+  await requireTeacher();
+  const id = str(fd, "id", 80);
+  if (id) await deleteProduct(id);
+  refresh();
 }

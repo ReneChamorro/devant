@@ -1,6 +1,6 @@
 import Image from "next/image";
 import { ImageSquare } from "@phosphor-icons/react/dist/ssr";
-import { formatPrice, type Product } from "@/lib/catalog";
+import { formatPrice, imageUrl, type Product } from "@/lib/catalog";
 
 export function ProductCard({ product }: { product: Product }) {
   return (
@@ -8,9 +8,10 @@ export function ProductCard({ product }: { product: Product }) {
       <div className="relative aspect-[4/5] bg-[linear-gradient(160deg,var(--brand),var(--bg-2)_70%)]">
         {product.image ? (
           <Image
-            src={product.image}
+            src={imageUrl(product.image)}
             alt={product.name}
             fill
+            unoptimized
             sizes="(min-width: 1024px) 25vw, (min-width: 640px) 33vw, 50vw"
             className="object-cover"
           />

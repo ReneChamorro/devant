@@ -1,6 +1,8 @@
+import { Suspense } from "react";
+import { connection } from "next/server";
 import type { Metadata } from "next";
 import { ProductCard } from "@/components/product-card";
-import { PRODUCTS } from "@/lib/catalog";
+import { loadProducts } from "@/lib/store";
 
 export const metadata: Metadata = {
   title: "Catálogo",
@@ -26,11 +28,34 @@ export default function CatalogoPage() {
         </p>
       </header>
 
-      <ul className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
-        {PRODUCTS.map((p) => (
-          <ProductCard key={p.id} product={p} />
-        ))}
-      </ul>
+      <Suspense fallback={<GridSkeleton />}>
+        <Products />
+      </Suspense>
+    </div>
+  );
+}
+
+async function Products() {
+  await connection();
+  const products = await loadProducts();
+  if (products.length === 0) {
+    return <p className="card px-5 py-8 text-center text-muted">Pronto habrá productos disponibles.</p>;
+  }
+  return (
+    <ul className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
+      {products.map((p) => (
+        <ProductCard key={p.id} product={p} />
+      ))}
+    </ul>
+  );
+}
+
+function GridSkeleton() {
+  return (
+    <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4" role="status" aria-label="Cargando">
+      {Array.from({ length: 4 }, (_, i) => (
+        <div key={i} className="card aspect-[4/5] animate-pulse bg-surface-2/60" />
+      ))}
     </div>
   );
 }

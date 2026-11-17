@@ -8,6 +8,7 @@ const ALL_LINKS = [
   { id: "obras", href: "/profe/obras", label: "Obras y bailes" },
   { id: "alumnas", href: "/profe/alumnas", label: "Alumnas" },
   { id: "familias", href: "/profe/familias", label: "Familias" },
+  { id: "catalogo", href: "/profe/catalogo", label: "Catálogo" },
   { id: "reportes", href: "/profe/reportes", label: "Reportes" },
 ] as const;
 

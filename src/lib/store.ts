@@ -7,6 +7,7 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
+import { MAX_PRODUCTS, SEED_PRODUCTS, type Product } from "./catalog";
 import { SEED_PRODUCTIONS, SEED_STUDENTS, SEED_TEMPLATES } from "./seed";
 import type {
   AttendanceChange,
@@ -538,5 +539,63 @@ export function saveChoreography(
 export function deleteChoreography(danceId: string): Promise<void> {
   return exclusive(async () => {
     await write(C, (await readChoreos()).filter((c) => c.danceId !== danceId));
+  });
+}
+
+/* ---------- catalog ---------- */
+
+const CAT = "catalog.json";
+const IMG_DIR = path.join(DIR, "catalog");
+const readProducts = () => read<Product>(CAT, SEED_PRODUCTS);
+
+export const loadProducts = readProducts;
+
+async function removeImage(file: string | undefined) {
+  if (!file) return;
+  await fs.rm(path.join(IMG_DIR, path.basename(file)), { force: true });
+}
+
+/** Stores an already validated photo and returns its file name. */
+export async function saveProductImage(bytes: Buffer, ext: "jpg" | "png" | "webp"): Promise<string> {
+  await fs.mkdir(IMG_DIR, { recursive: true });
+  const file = `${randomUUID()}.${ext}`;
+  await fs.writeFile(path.join(IMG_DIR, file), bytes);
+  return file;
+}
+
+export async function readProductImage(file: string): Promise<Buffer | null> {
+  try {
+    return await fs.readFile(path.join(IMG_DIR, path.basename(file)));
+  } catch {
+    return null;
+  }
+}
+
+type ProductInput = { id?: string; name: string; price: number; image?: string; removeImage?: boolean };
+
+/** Creates or updates a product. A new `image` replaces (and deletes) the old photo. */
+export function saveProduct(input: ProductInput): Promise<"ok" | "missing" | "full"> {
+  return exclusive(async () => {
+    const all = await readProducts();
+    if (!input.id) {
+      if (all.length >= MAX_PRODUCTS) return "full";
+      await write(CAT, [...all, { id: randomUUID(), name: input.name, price: input.price, ...(input.image ? { image: input.image } : {}) }]);
+      return "ok";
+    }
+    const prev = all.find((p) => p.id === input.id);
+    if (!prev) return "missing";
+    const image = input.image ?? (input.removeImage ? undefined : prev.image);
+    if (prev.image && image !== prev.image) await removeImage(prev.image);
+    const next: Product = { id: prev.id, name: input.name, price: input.price, ...(image ? { image } : {}) };
+    await write(CAT, all.map((p) => (p.id === prev.id ? next : p)));
+    return "ok";
+  });
+}
+
+export function deleteProduct(id: string): Promise<void> {
+  return exclusive(async () => {
+    const all = await readProducts();
+    await removeImage(all.find((p) => p.id === id)?.image);
+    await write(CAT, all.filter((p) => p.id !== id));
   });
 }
